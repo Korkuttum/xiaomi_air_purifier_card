@@ -222,7 +222,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               justify-content: center;
               width: 36px;
               height: 36px;
-              --mdc-icon-size: 36px;
+              --mdc-icon-size: 24px;
             "></ha-icon>
           </div>
 
