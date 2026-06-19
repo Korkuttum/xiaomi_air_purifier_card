@@ -89,15 +89,19 @@ class XiaomiAirPurifierCard extends HTMLElement {
       "%"
     );
 
-    const mode = attrs.preset_mode || attrs.mode || "auto";
-
     const pm25 = pm25Data.value;
     const temperature = temperatureData.value;
     const humidity = humidityData.value;
 
     const pmColor = this._getPMColor(pm25);
     const pmStatus = this._getPMStatus(pm25);
-    const modeDisplay = this._getModeDisplay(mode);
+
+    const modeSteps = this._getModeSteps(attrs);
+    const currentStepIndex = this._getCurrentStepIndex(modeSteps, attrs);
+    const modeDisplay =
+      currentStepIndex !== -1
+        ? modeSteps[currentStepIndex].label
+        : this._getModeDisplay(attrs.preset_mode || attrs.mode || "auto");
 
     this.innerHTML = `
       <ha-card style="
@@ -213,13 +217,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-width: 32px;
+            min-width: 44px;
           ">
             <span style="
-              font-size: 26px;
+              font-size: 17px;
               font-weight: 700;
               color: var(--primary-text-color);
               line-height: 1.1;
+              white-space: nowrap;
             ">${modeDisplay}</span>
             <span style="
               font-size: 8px;
@@ -287,21 +292,119 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   _getModeDisplay(mode) {
-    const modeMap = {
-      auto: "A",
-      automatic: "A",
-      silent: "1",
-      sleep: "1",
-      quiet: "1",
-      medium: "2",
-      normal: "2",
-      high: "3",
-      strong: "3",
-      turbo: "3",
-      favorite: "F",
-      manual: "M",
-    };
-    return modeMap[mode?.toLowerCase()] || mode?.charAt(0).toUpperCase() || "A";
+    // Marka/modele göre sabit bir çeviri sözlüğüne bakmıyoruz; entity hangi
+    // mod adını veriyorsa (Auto, Sleep, Favorite, Manual, ya da başka
+    // herhangi bir şey) doğrudan ondan kısa bir etiket türetiyoruz.
+    if (!mode) return "?";
+    return mode.toString().slice(0, 3).toUpperCase();
+  }
+
+  // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
+  // kendi preset_modes sırasını kullanır; kart yapılandırmasında mode_order
+  // verilmişse onu kullanır (sıra entity'de farklıysa, örn. "Favorite"
+  // "Manual"dan önce geliyorsa, istediğiniz sırayı burada belirtebilirsiniz).
+  // "Manual" gibi bir preset, entity'nin kendi speed_list attribute'u
+  // (örn. Level1, Level2, Level3) varsa doğrudan o isimlerle ve o sayıda
+  // alt adıma bölünür. speed_list yoksa percentage_step'ten hesaplanır.
+  // Not: HA'nın eski fan.set_speed servisi kaldırıldığı için kontrol yine
+  // fan.set_percentage ile yapılır; speed_list sadece etiketleme/eşleme
+  // amacıyla, HA'nın kendi ordered_list_item_to_percentage mantığıyla
+  // aynı şekilde percentage'e çevrilerek kullanılır.
+  _getModeSteps(attrs) {
+    const order =
+      this.config?.mode_order && this.config.mode_order.length
+        ? this.config.mode_order
+        : attrs.preset_modes || [];
+    const speedList =
+      attrs.speed_list && attrs.speed_list.length ? attrs.speed_list : null;
+    const percentageStep = attrs.percentage_step;
+    const steps = [];
+
+    order.forEach((pm) => {
+      const isManualLike = pm.toString().toLowerCase() === "manual";
+      if (isManualLike && speedList) {
+        const step = percentageStep && percentageStep > 0
+          ? percentageStep
+          : 100 / speedList.length;
+        speedList.forEach((levelName, idx) => {
+          steps.push({
+            presetMode: pm,
+            percentage: Math.round(step * (idx + 1)),
+            label: levelName.toString().toUpperCase(),
+          });
+        });
+      } else if (isManualLike && percentageStep && percentageStep > 0) {
+        const levels = Math.max(1, Math.round(100 / percentageStep));
+        for (let i = 1; i <= levels; i++) {
+          steps.push({
+            presetMode: pm,
+            percentage: Math.round(percentageStep * i),
+            label: `${pm.toString().slice(0, 3).toUpperCase()}${i}`,
+          });
+        }
+      } else {
+        steps.push({
+          presetMode: pm,
+          percentage: null,
+          label: pm.toString().slice(0, 3).toUpperCase(),
+        });
+      }
+    });
+
+    // preset_modes hiç yoksa ama speed_list / percentage_step bildiren
+    // basit bir fan ise (preset kavramı olmadan doğrudan seviyeli)
+    if (!steps.length && speedList) {
+      const step = percentageStep && percentageStep > 0
+        ? percentageStep
+        : 100 / speedList.length;
+      speedList.forEach((levelName, idx) => {
+        steps.push({
+          presetMode: null,
+          percentage: Math.round(step * (idx + 1)),
+          label: levelName.toString().toUpperCase(),
+        });
+      });
+    } else if (!steps.length && percentageStep) {
+      const levels = Math.max(1, Math.round(100 / percentageStep));
+      for (let i = 1; i <= levels; i++) {
+        steps.push({
+          presetMode: null,
+          percentage: Math.round(percentageStep * i),
+          label: `${i}`,
+        });
+      }
+    }
+
+    return steps;
+  }
+
+  // Mevcut durumun (preset_mode + percentage) yukarıdaki adımlardan
+  // hangisine karşılık geldiğini bulur.
+  _getCurrentStepIndex(steps, attrs) {
+    const currentPreset = (attrs.preset_mode || "").toString().toLowerCase();
+    const currentPercentage = attrs.percentage;
+
+    const candidates = steps
+      .map((s, i) => ({ s, i }))
+      .filter(
+        ({ s }) => (s.presetMode || "").toString().toLowerCase() === currentPreset
+      );
+
+    if (!candidates.length) return -1;
+    if (candidates.length === 1) return candidates[0].i;
+
+    // Aynı preset'e ait birden fazla seviye varsa (Manual1/2/3 gibi),
+    // mevcut yüzdeye en yakın olanı seç.
+    let best = candidates[0];
+    let bestDiff = Math.abs((best.s.percentage ?? 0) - (currentPercentage ?? 0));
+    candidates.forEach((c) => {
+      const diff = Math.abs((c.s.percentage ?? 0) - (currentPercentage ?? 0));
+      if (diff < bestDiff) {
+        best = c;
+        bestDiff = diff;
+      }
+    });
+    return best.i;
   }
 
   _togglePower() {
@@ -310,24 +413,40 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
   _cycleMode() {
     const entity = this._hass.states[this.entity];
-    const currentMode = entity.attributes.preset_mode || entity.attributes.mode || "auto";
+    const attrs = entity?.attributes || {};
+    const steps = this._getModeSteps(attrs);
 
-    // Cihazın gerçek mod listesi varsa onu kullan (her Xiaomi modeli farklı
-    // mod isimleri kullanabilir, örn. "Auto"/"Sleep"/"Favorite").
-    const modeCycle = entity.attributes.preset_modes && entity.attributes.preset_modes.length
-      ? entity.attributes.preset_modes
-      : ["auto", "silent", "medium", "high"];
+    if (!steps.length) {
+      // Hiç preset_modes / percentage_step bilgisi olmayan basit cihazlar
+      // için son çare: jenerik bir sabit liste.
+      const fallback = ["auto", "silent", "medium", "high"];
+      const current = (attrs.preset_mode || attrs.mode || "auto").toLowerCase();
+      let idx = fallback.indexOf(current);
+      if (idx === -1) idx = 0;
+      const next = fallback[(idx + 1) % fallback.length];
+      this._hass.callService("fan", "set_preset_mode", {
+        entity_id: this.entity,
+        preset_mode: next,
+      });
+      return;
+    }
 
-    let currentIndex = modeCycle.findIndex(
-      (m) => m.toLowerCase() === currentMode.toLowerCase()
-    );
-    if (currentIndex === -1) currentIndex = 0;
-    const nextIndex = (currentIndex + 1) % modeCycle.length;
+    const currentIndex = this._getCurrentStepIndex(steps, attrs);
+    const nextIndex = (currentIndex + 1) % steps.length;
+    const next = steps[nextIndex];
 
-    this._hass.callService("fan", "set_preset_mode", {
-      entity_id: this.entity,
-      preset_mode: modeCycle[nextIndex],
-    });
+    if (next.presetMode) {
+      this._hass.callService("fan", "set_preset_mode", {
+        entity_id: this.entity,
+        preset_mode: next.presetMode,
+      });
+    }
+    if (next.percentage !== null && next.percentage !== undefined) {
+      this._hass.callService("fan", "set_percentage", {
+        entity_id: this.entity,
+        percentage: next.percentage,
+      });
+    }
   }
 
   _openMoreInfo() {
@@ -380,6 +499,27 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         <ha-entity-picker id="pm25_picker" label="PM2.5 Sensörü (opsiyonel)"></ha-entity-picker>
         <ha-entity-picker id="temperature_picker" label="Sıcaklık Sensörü (opsiyonel)"></ha-entity-picker>
         <ha-entity-picker id="humidity_picker" label="Nem Sensörü (opsiyonel)"></ha-entity-picker>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:13px; color: var(--primary-text-color);">
+            Mod Döngü Sırası (opsiyonel)
+          </label>
+          <input id="mode_order_input" type="text" placeholder="Auto, Sleep, Manual, Favorite" style="
+            padding:10px 12px;
+            border-radius:6px;
+            border:1px solid var(--divider-color, #ccc);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            font-size:14px;
+          " />
+          <div style="font-size:12px; color: var(--secondary-text-color);">
+            Mod tuşuna basıldığında dolaşılacak sıra. Entity'nizin attribute
+            listesindeki <code>preset_modes</code> isimlerini virgülle ayırarak
+            yazın (büyük/küçük harf önemli). "Manual" gibi bir mod, entity
+            <code>percentage_step</code> bildiriyorsa otomatik olarak alt
+            seviyelere (Manual1, Manual2, ...) bölünür. Boş bırakırsanız
+            entity'nin kendi sırası kullanılır.
+          </div>
+        </div>
         <div style="font-size:12px; color: var(--secondary-text-color);">
           Sıcaklık/nem/PM2.5 sensörlerinizi seçmezseniz, kart bu verileri fan
           entity'sinin attribute'larından okumayı dener (bazı entegrasyonlarda
@@ -393,6 +533,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     this._pm25Picker = this.querySelector("#pm25_picker");
     this._temperaturePicker = this.querySelector("#temperature_picker");
     this._humidityPicker = this.querySelector("#humidity_picker");
+    this._modeOrderInput = this.querySelector("#mode_order_input");
 
     this._entityPicker.includeDomains = ["fan"];
     this._pm25Picker.includeDomains = ["sensor"];
@@ -411,6 +552,9 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     this._humidityPicker.addEventListener("value-changed", (e) =>
       this._valueChanged("humidity_entity", e)
     );
+    this._modeOrderInput.addEventListener("change", (e) =>
+      this._modeOrderChanged(e)
+    );
 
     this._updatePickers();
   }
@@ -428,6 +572,32 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       this._temperaturePicker.value = this._config?.temperature_entity || "";
     if (this._humidityPicker)
       this._humidityPicker.value = this._config?.humidity_entity || "";
+    if (this._modeOrderInput && document.activeElement !== this._modeOrderInput) {
+      this._modeOrderInput.value = (this._config?.mode_order || []).join(", ");
+    }
+  }
+
+  _modeOrderChanged(ev) {
+    const raw = ev.target.value || "";
+    const list = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const newConfig = { ...this._config };
+    if (list.length) {
+      newConfig.mode_order = list;
+    } else {
+      delete newConfig.mode_order;
+    }
+    this._config = newConfig;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: newConfig },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   _valueChanged(key, ev) {
