@@ -323,13 +323,21 @@ class XiaomiAirPurifierCard extends HTMLElement {
     order.forEach((pm) => {
       const isManualLike = pm.toString().toLowerCase() === "manual";
       if (isManualLike && speedList) {
-        const step = percentageStep && percentageStep > 0
-          ? percentageStep
-          : 100 / speedList.length;
+        // HA'nın ordered_list_item_to_percentage mantığı tam sayı bölmesi
+        // (floor) kullanır: `list_position * 100 // list_len`. Burada
+        // Math.round kullanmak, bazı uzunluklarda (örn. 3 seviye) bir üst
+        // seviyenin sınırını aşan bir yüzde üretir (Level2 = round(66.67) =
+        // 67 ama HA'nın üst sınırı 66'dır), bu da set_percentage çağrıldığında
+        // gerçek cihazın bir sonraki seviyeye değil ondan sonrakine
+        // atlamasına yol açar. Math.floor, HA ile birebir aynı sınırı verir.
+        const listLen = speedList.length;
         speedList.forEach((levelName, idx) => {
+          const percentage = percentageStep && percentageStep > 0
+            ? Math.floor(percentageStep * (idx + 1))
+            : Math.floor(((idx + 1) * 100) / listLen);
           steps.push({
             presetMode: pm,
-            percentage: Math.round(step * (idx + 1)),
+            percentage,
             label: levelName.toString().toUpperCase(),
           });
         });
@@ -338,7 +346,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         for (let i = 1; i <= levels; i++) {
           steps.push({
             presetMode: pm,
-            percentage: Math.round(percentageStep * i),
+            percentage: Math.floor((i * 100) / levels),
             label: `${pm.toString().slice(0, 3).toUpperCase()}${i}`,
           });
         }
@@ -354,13 +362,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // preset_modes hiç yoksa ama speed_list / percentage_step bildiren
     // basit bir fan ise (preset kavramı olmadan doğrudan seviyeli)
     if (!steps.length && speedList) {
-      const step = percentageStep && percentageStep > 0
-        ? percentageStep
-        : 100 / speedList.length;
+      const listLen = speedList.length;
       speedList.forEach((levelName, idx) => {
+        const percentage = percentageStep && percentageStep > 0
+          ? Math.floor(percentageStep * (idx + 1))
+          : Math.floor(((idx + 1) * 100) / listLen);
         steps.push({
           presetMode: null,
-          percentage: Math.round(step * (idx + 1)),
+          percentage,
           label: levelName.toString().toUpperCase(),
         });
       });
@@ -369,7 +378,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       for (let i = 1; i <= levels; i++) {
         steps.push({
           presetMode: null,
-          percentage: Math.round(percentageStep * i),
+          percentage: Math.floor((i * 100) / levels),
           label: `${i}`,
         });
       }
