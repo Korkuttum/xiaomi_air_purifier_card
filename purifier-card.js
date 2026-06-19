@@ -197,7 +197,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: visible;
         display: flex;
         flex-direction: column;
         position: relative;
@@ -242,24 +243,27 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></ha-icon>
           </div>
 
-          <!-- 2. PM2.5 — DEĞER (002) ve BİRİM (µg/m³) birlikte tek bir blok
-               olarak kolonun dikey merkezine ortalanır (flex column +
-               justify-content:center). Aralarında sabit bir boşluk (gap)
-               olduğu için artık üst üste binmiyorlar. flex-shrink:0 ile
-               ikisi de kırpılmadan tam boyutunda render edilir. -->
+          <!-- 2. PM2.5 — DEĞER (002) kolonun TAM dikey merkezine absolute
+               ile sabitlenir (kolonun yüksekliğinden / birimin
+               varlığından bağımsız olarak hep ortada kalır). Birim
+               (µg/m³) value'nun hemen altına, yine absolute ile sabit bir
+               offsetle yerleştirilir. overflow:visible olduğu için (artık
+               hidden değil) taşma olsa bile kaybolmaz, görünür kalır. -->
           <div class="xap-pm-col" style="
+            position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             flex: 1 1 0;
             align-self: stretch;
             min-width: 0;
             overflow: visible;
-            gap: 4px;
           ">
             <span class="xap-pm-value" style="
-              flex-shrink: 0;
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
               font-weight: 400;
               line-height: 1;
               letter-spacing: 0px;
@@ -268,7 +272,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
               white-space: nowrap;
             "></span>
             <span class="xap-pm-unit" style="
-              flex-shrink: 0;
+              position: absolute;
+              top: calc(50% + 14px);
+              left: 50%;
+              transform: translateX(-50%);
               color: var(--secondary-text-color);
               text-align: center;
               white-space: nowrap;
