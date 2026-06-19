@@ -5,16 +5,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
     };
   }
 
+  static getConfigElement() {
+    return document.createElement("xiaomi-air-purifier-card-editor");
+  }
+
   setConfig(config) {
     if (!config.entity) {
-      throw new Error("Lütfen bir entity belirtin!");
+      throw new Error("Lütfen bir fan entity'si belirtin!");
     }
     this.config = config;
     this.entity = config.entity;
+    this.pm25Entity = config.pm25_entity;
+    this.temperatureEntity = config.temperature_entity;
+    this.humidityEntity = config.humidity_entity;
 
-    // Olay dinleyicisini sadece bir kez bağla (event delegation).
-    // Önceki sürüm @click="${...}" (lit-html sözdizimi) kullanıyordu ama
-    // innerHTML ile render edildiği için hiçbir tıklama çalışmıyordu.
     if (!this._listenersBound) {
       this.addEventListener("click", (e) => this._handleClick(e));
       this._listenersBound = true;
@@ -35,9 +39,29 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._openMoreInfo();
   }
 
+  // Bir sensör entity'sinden ya da (verilmemişse) fan entity attribute'larından
+  // değer + birim oku. Böylece hem ayrı sensör hem de eski "her şey fan
+  // attribute'unda" kurulumları desteklenir.
+  _readValue(separateEntityId, fallbackValue, fallbackUnit) {
+    if (separateEntityId) {
+      const st = this._hass?.states[separateEntityId];
+      if (st && st.state !== "unavailable" && st.state !== "unknown") {
+        return {
+          value: st.state,
+          unit: st.attributes?.unit_of_measurement || fallbackUnit,
+        };
+      }
+      return { value: "--", unit: fallbackUnit };
+    }
+    if (fallbackValue === undefined || fallbackValue === null) {
+      return { value: "--", unit: fallbackUnit };
+    }
+    return { value: fallbackValue, unit: fallbackUnit };
+  }
+
   render() {
-    const entityState = this._hass?.states[this.entity];
-    if (!entityState) {
+    const fanState = this._hass?.states[this.entity];
+    if (!fanState) {
       this.innerHTML = `
         <ha-card style="padding: 12px; color: var(--warning-color);">
           ⏳ ${this.entity} yükleniyor...
@@ -46,14 +70,30 @@ class XiaomiAirPurifierCard extends HTMLElement {
       return;
     }
 
-    const state = entityState.state;
-    const attrs = entityState.attributes || {};
+    const state = fanState.state;
+    const attrs = fanState.attributes || {};
 
-    // Verileri al - entity attribute isimlerine göre ayarlayın
-    const pm25 = attrs.pm25 || attrs.aqi || attrs.air_quality || "--";
-    const temperature = attrs.temperature || attrs.temp || "--";
-    const humidity = attrs.humidity || "--";
-    const mode = attrs.mode || attrs.preset_mode || "auto";
+    const pm25Data = this._readValue(
+      this.pm25Entity,
+      attrs.pm25 || attrs.aqi || attrs.air_quality,
+      "µg/m³"
+    );
+    const temperatureData = this._readValue(
+      this.temperatureEntity,
+      attrs.temperature || attrs.temp,
+      "°"
+    );
+    const humidityData = this._readValue(
+      this.humidityEntity,
+      attrs.humidity,
+      "%"
+    );
+
+    const mode = attrs.preset_mode || attrs.mode || "auto";
+
+    const pm25 = pm25Data.value;
+    const temperature = temperatureData.value;
+    const humidity = humidityData.value;
 
     const pmColor = this._getPMColor(pm25);
     const pmStatus = this._getPMStatus(pm25);
@@ -125,7 +165,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               font-size: 10px;
               color: var(--secondary-text-color);
             ">
-              <span>µg/m³</span>
+              <span>${pm25Data.unit}</span>
               <span style="
                 padding: 0px 6px;
                 border-radius: 8px;
@@ -153,7 +193,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               font-weight: 500;
             ">
               <span style="font-size: 14px;">🌡️</span>
-              <span>${temperature}°</span>
+              <span>${temperature}${temperatureData.unit === "°" ? "°" : ""}</span>
             </div>
             <div style="
               display: flex;
@@ -164,7 +204,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               font-weight: 500;
             ">
               <span style="font-size: 14px;">💧</span>
-              <span>${humidity}%</span>
+              <span>${humidity}${humidityData.unit === "%" ? "%" : ""}</span>
             </div>
           </div>
 
@@ -225,6 +265,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       return "var(--secondary-text-color)";
     }
     const num = Number(value);
+    if (Number.isNaN(num)) return "var(--secondary-text-color)";
     if (num <= 12) return "#4CAF50";
     if (num <= 35) return "#FFC107";
     if (num <= 55) return "#FF9800";
@@ -237,6 +278,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       return "--";
     }
     const num = Number(value);
+    if (Number.isNaN(num)) return "--";
     if (num <= 12) return "İyi";
     if (num <= 35) return "Orta";
     if (num <= 55) return "Hassas";
@@ -249,6 +291,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       auto: "A",
       automatic: "A",
       silent: "1",
+      sleep: "1",
       quiet: "1",
       medium: "2",
       normal: "2",
@@ -267,11 +310,17 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
   _cycleMode() {
     const entity = this._hass.states[this.entity];
-    const currentMode = entity.attributes.mode || entity.attributes.preset_mode || "auto";
+    const currentMode = entity.attributes.preset_mode || entity.attributes.mode || "auto";
 
-    // Mod döngüsü - cihazınıza göre ayarlayın
-    const modeCycle = ["auto", "silent", "medium", "high"];
-    let currentIndex = modeCycle.indexOf(currentMode);
+    // Cihazın gerçek mod listesi varsa onu kullan (her Xiaomi modeli farklı
+    // mod isimleri kullanabilir, örn. "Auto"/"Sleep"/"Favorite").
+    const modeCycle = entity.attributes.preset_modes && entity.attributes.preset_modes.length
+      ? entity.attributes.preset_modes
+      : ["auto", "silent", "medium", "high"];
+
+    let currentIndex = modeCycle.findIndex(
+      (m) => m.toLowerCase() === currentMode.toLowerCase()
+    );
     if (currentIndex === -1) currentIndex = 0;
     const nextIndex = (currentIndex + 1) % modeCycle.length;
 
@@ -302,8 +351,108 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 }
 
-// Kartı tanımla
+// ---------------------------------------------------------------------
+// Görsel yapılandırma editörü (Kart Ekle > Düzenle ekranında açılır)
+// ---------------------------------------------------------------------
+class XiaomiAirPurifierCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._updatePickers();
+  }
+
+  connectedCallback() {
+    this._render();
+  }
+
+  _render() {
+    if (this._rendered) {
+      this._updatePickers();
+      return;
+    }
+    this.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:16px; padding:8px 2px;">
+        <ha-entity-picker id="entity_picker" label="Fan / Hava Temizleyici (zorunlu)"></ha-entity-picker>
+        <ha-entity-picker id="pm25_picker" label="PM2.5 Sensörü (opsiyonel)"></ha-entity-picker>
+        <ha-entity-picker id="temperature_picker" label="Sıcaklık Sensörü (opsiyonel)"></ha-entity-picker>
+        <ha-entity-picker id="humidity_picker" label="Nem Sensörü (opsiyonel)"></ha-entity-picker>
+        <div style="font-size:12px; color: var(--secondary-text-color);">
+          Sıcaklık/nem/PM2.5 sensörlerinizi seçmezseniz, kart bu verileri fan
+          entity'sinin attribute'larından okumayı dener (bazı entegrasyonlarda
+          orada bulunur, bazılarında ayrı sensör entity'si olarak gelir).
+        </div>
+      </div>
+    `;
+    this._rendered = true;
+
+    this._entityPicker = this.querySelector("#entity_picker");
+    this._pm25Picker = this.querySelector("#pm25_picker");
+    this._temperaturePicker = this.querySelector("#temperature_picker");
+    this._humidityPicker = this.querySelector("#humidity_picker");
+
+    this._entityPicker.includeDomains = ["fan"];
+    this._pm25Picker.includeDomains = ["sensor"];
+    this._temperaturePicker.includeDomains = ["sensor"];
+    this._humidityPicker.includeDomains = ["sensor"];
+
+    this._entityPicker.addEventListener("value-changed", (e) =>
+      this._valueChanged("entity", e)
+    );
+    this._pm25Picker.addEventListener("value-changed", (e) =>
+      this._valueChanged("pm25_entity", e)
+    );
+    this._temperaturePicker.addEventListener("value-changed", (e) =>
+      this._valueChanged("temperature_entity", e)
+    );
+    this._humidityPicker.addEventListener("value-changed", (e) =>
+      this._valueChanged("humidity_entity", e)
+    );
+
+    this._updatePickers();
+  }
+
+  _updatePickers() {
+    if (!this._rendered || !this._hass) return;
+    [this._entityPicker, this._pm25Picker, this._temperaturePicker, this._humidityPicker].forEach(
+      (p) => {
+        if (p) p.hass = this._hass;
+      }
+    );
+    if (this._entityPicker) this._entityPicker.value = this._config?.entity || "";
+    if (this._pm25Picker) this._pm25Picker.value = this._config?.pm25_entity || "";
+    if (this._temperaturePicker)
+      this._temperaturePicker.value = this._config?.temperature_entity || "";
+    if (this._humidityPicker)
+      this._humidityPicker.value = this._config?.humidity_entity || "";
+  }
+
+  _valueChanged(key, ev) {
+    ev.stopPropagation();
+    const value = ev.detail.value;
+    const newConfig = { ...this._config };
+    if (value) {
+      newConfig[key] = value;
+    } else {
+      delete newConfig[key];
+    }
+    this._config = newConfig;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: newConfig },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+// Kartları tanımla
 customElements.define("xiaomi-air-purifier-card", XiaomiAirPurifierCard);
+customElements.define("xiaomi-air-purifier-card-editor", XiaomiAirPurifierCardEditor);
 
 // HACS ve Lovelace kart seçici (Add Card / Önizleme) için kaydet
 window.customCards = window.customCards || [];
