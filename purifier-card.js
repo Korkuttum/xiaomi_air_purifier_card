@@ -242,28 +242,39 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></ha-icon>
           </div>
 
-          <!-- 2. PM2.5 — hem yatayda hem dikeyde tam ortalı, kart boyutu
-               değiştikçe de ortalı kalır (flex:1 + center/center +
-               align-self:stretch ile satırın tüm yüksekliğini kaplar). -->
+          <!-- 2. PM2.5 — DEĞER (002) kolonun tam dikey merkezine sabitlenir
+               (position:absolute + translateY(-50%)); birim (µg/m³) ise
+               kendi normal yerinde, değerin biraz altında sabit kalır.
+               İkisi birbirini ortalama hesabına dahil etmez. -->
           <div class="xap-pm-col" style="
+            position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             flex: 1 1 0;
             align-self: stretch;
             min-width: 0;
           ">
             <span class="xap-pm-value" style="
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
               font-weight: 400;
               line-height: 1;
               letter-spacing: 0px;
               font-variant-numeric: tabular-nums;
               text-align: center;
+              white-space: nowrap;
             "></span>
             <span class="xap-pm-unit" style="
+              position: absolute;
+              bottom: 4px;
+              left: 50%;
+              transform: translateX(-50%);
               color: var(--secondary-text-color);
               text-align: center;
+              white-space: nowrap;
             "></span>
           </div>
 
@@ -420,10 +431,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.fanIcon.style.animationDuration = "";
     }
 
-    // PM2.5 — hem yatay hem dikey tam ortalı; kolon flex:1 + align/justify
-    // center olduğu için kart boyutu değiştikçe de ortalı kalır. Font
-    // boyutu sabit, sadece kolonun kendi içindeki gap scale ile büyür.
-    els.pmCol.style.gap = `${Math.round(3 * scale)}px`;
+    // PM2.5 — DEĞER kendi başına kolonun dikey merkezine sabit (absolute +
+    // translateY(-50%)), birim ise kendi sabit yerinde (alt kısımda) kalır.
+    // Font boyutu sabit.
     els.pmValue.style.fontSize = `${FIXED_PM_FONT}px`;
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
@@ -533,9 +543,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!this._particlesActive || Number.isNaN(num)) {
       target = 0;
     } else {
-      // PM2.5 ~0 -> 4 parçacık (hafif bir akış her zaman görünsün),
-      // PM2.5 >= 150 -> 28 parçacık (yoğun kirlilik hissi).
-      target = Math.round(4 + (Math.min(Math.max(num, 0), 150) / 150) * 24);
+      // PM2.5 ~0 -> 10 parçacık (hafif bir akış her zaman görünsün),
+      // PM2.5 >= 150 -> 42 parçacık (yoğun kirlilik hissi).
+      target = Math.round(10 + (Math.min(Math.max(num, 0), 150) / 150) * 32);
     }
     this._particleTargetCount = target;
 
