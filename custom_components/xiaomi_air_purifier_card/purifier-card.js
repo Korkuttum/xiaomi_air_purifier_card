@@ -11,7 +11,28 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     this.config = config;
     this.entity = config.entity;
+
+    // Olay dinleyicisini sadece bir kez bağla (event delegation).
+    // Önceki sürüm @click="${...}" (lit-html sözdizimi) kullanıyordu ama
+    // innerHTML ile render edildiği için hiçbir tıklama çalışmıyordu.
+    if (!this._listenersBound) {
+      this.addEventListener("click", (e) => this._handleClick(e));
+      this._listenersBound = true;
+    }
+
     this.render();
+  }
+
+  _handleClick(e) {
+    const actionTarget = e.target.closest("[data-action]");
+    if (actionTarget) {
+      e.stopPropagation();
+      const action = actionTarget.dataset.action;
+      if (action === "toggle") this._togglePower();
+      if (action === "cycle") this._cycleMode();
+      return;
+    }
+    this._openMoreInfo();
   }
 
   render() {
@@ -47,8 +68,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
         min-height: 80px;
         cursor: pointer;
         transition: all 0.2s ease;
-      " @click="${() => this._openMoreInfo()}">
-        
+      ">
+
         <div style="
           display: flex;
           align-items: center;
@@ -59,7 +80,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           <!-- 1. Aç/Kapa Butonu -->
           <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
             <ha-icon-button
-              icon="${state === "on" ? "mdi:power" : "mdi:power-off"}"
+              data-action="toggle"
               style="
                 color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
                 --mdc-icon-button-size: 42px;
@@ -70,8 +91,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
                 height: 42px;
                 transition: all 0.2s ease;
               "
-              @click="${(e) => { e.stopPropagation(); this._togglePower(); }}"
-            ></ha-icon-button>
+            >
+              <ha-icon icon="${state === "on" ? "mdi:power" : "mdi:power-off"}"></ha-icon>
+            </ha-icon-button>
             <span style="
               font-size: 9px;
               color: var(--secondary-text-color);
@@ -171,7 +193,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           <!-- 5. Mod Değiştir (Döngü Okları) -->
           <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
             <ha-icon-button
-              icon="mdi:sync"
+              data-action="cycle"
               style="
                 color: var(--secondary-text-color);
                 --mdc-icon-button-size: 42px;
@@ -182,8 +204,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
                 height: 42px;
                 transition: all 0.2s ease;
               "
-              @click="${(e) => { e.stopPropagation(); this._cycleMode(); }}"
-            ></ha-icon-button>
+            >
+              <ha-icon icon="mdi:sync"></ha-icon>
+            </ha-icon-button>
             <span style="
               font-size: 8px;
               color: var(--secondary-text-color);
@@ -259,9 +282,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   _openMoreInfo() {
-    this._hass.callService("lovelace", "more_info", {
-      entity_id: this.entity,
+    const event = new CustomEvent("hass-more-info", {
+      bubbles: true,
+      composed: true,
+      detail: { entityId: this.entity },
     });
+    this.dispatchEvent(event);
   }
 
   set hass(hass) {
@@ -279,10 +305,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
 // Kartı tanımla
 customElements.define("xiaomi-air-purifier-card", XiaomiAirPurifierCard);
 
-// HACS ve Lovelace için kaydet
-if (!window.customCards) {
-  window.customCards = [];
-}
+// HACS ve Lovelace kart seçici (Add Card / Önizleme) için kaydet
+window.customCards = window.customCards || [];
 window.customCards.push({
   type: "xiaomi-air-purifier-card",
   name: "Xiaomi Air Purifier Card",
