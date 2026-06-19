@@ -197,8 +197,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
-        overflow-x: hidden;
-        overflow-y: visible;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
         position: relative;
@@ -246,9 +245,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
           <!-- 2. PM2.5 — DEĞER (002) kolonun TAM dikey merkezine absolute
                ile sabitlenir (kolonun yüksekliğinden / birimin
                varlığından bağımsız olarak hep ortada kalır). Birim
-               (µg/m³) value'nun hemen altına, yine absolute ile sabit bir
-               offsetle yerleştirilir. overflow:visible olduğu için (artık
-               hidden değil) taşma olsa bile kaybolmaz, görünür kalır. -->
+               (µg/m³) value'nun hemen altına, yine absolute ile sabit ve
+               KÜÇÜK bir offsetle yerleştirilir — ha-card overflow:hidden
+               olduğu için (sürükleme/scroll oku çıkmasın diye) offset
+               kartın gerçek yüksekliğine kesin sığacak kadar dar tutuldu. -->
           <div class="xap-pm-col" style="
             position: relative;
             display: flex;
@@ -257,7 +257,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
             flex: 1 1 0;
             align-self: stretch;
             min-width: 0;
-            overflow: visible;
           ">
             <span class="xap-pm-value" style="
               position: absolute;
@@ -273,7 +272,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></span>
             <span class="xap-pm-unit" style="
               position: absolute;
-              top: calc(50% + 14px);
+              top: calc(50% + 10px);
               left: 50%;
               transform: translateX(-50%);
               color: var(--secondary-text-color);
