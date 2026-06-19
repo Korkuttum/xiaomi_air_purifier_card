@@ -269,7 +269,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></span>
             <span class="xap-pm-unit" style="
               position: absolute;
-              bottom: 4px;
+              top: calc(50% + 17px);
               left: 50%;
               transform: translateX(-50%);
               color: var(--secondary-text-color);
@@ -555,13 +555,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
       typeof d.attrs?.percentage === "number" ? d.attrs.percentage : 50;
     this._particleSpeedFactor = 0.6 + (Math.max(0, Math.min(100, pct)) / 100) * 1.1;
 
-    // Rengi her animasyon karesinde değil, burada (hass güncellemesinde,
-    // RAF'a göre çok daha seyrek) hesaplayıp cache'liyoruz — performans
-    // için, ama tema değişebileceğinden her seferinde tazeliyoruz.
-    const computed = getComputedStyle(this).getPropertyValue(
-      "--secondary-text-color"
-    );
-    this._particleColor = computed && computed.trim() ? computed.trim() : "#9e9e9e";
+    // Parçacıkların rengi PM2.5 kalite rengiyle (002 değerinin rengiyle)
+    // aynı olsun — hava ne kadar kirliyse parçacıklar da o renkte akar.
+    this._particleColor = d.pmColor || "#9e9e9e";
   }
 
   _spawnParticle() {
