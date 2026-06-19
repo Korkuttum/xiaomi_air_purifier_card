@@ -68,6 +68,19 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return Math.round(num).toString().padStart(3, "0");
   }
 
+  // Bu kart bir grid/sections görünümünde büyütüldüğünde (örn. columns 9
+  // veya 12'ye çıkarıldığında) elemanlar arasındaki boşluğu da orantılı
+  // büyütmek için kartın gerçek genişliğini ölçüp bir ölçek katsayısı
+  // üretiyoruz. Referans genişlik, varsayılan columns:6 boyutunda kartın
+  // tipik genişliğidir; daha büyük kartlarda scale > 1 olur.
+  _getScale() {
+    const REFERENCE_WIDTH = 260; // columns:6 civarı tipik kart genişliği (px)
+    const width = this.offsetWidth || REFERENCE_WIDTH;
+    let scale = width / REFERENCE_WIDTH;
+    scale = Math.max(0.85, Math.min(scale, 2.2));
+    return scale;
+  }
+
   render() {
     const fanState = this._hass?.states[this.entity];
     if (!fanState) {
@@ -76,6 +89,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           ⏳ Loading ${this.entity}...
         </ha-card>
       `;
+      this._built = false;
       return;
     }
 
@@ -89,8 +103,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     );
     const temperatureData = this._readValue(
       this.temperatureEntity,
-      attrs.temperature || attrs.temp,
-      "°"
+      attrs.temperature ?? attrs.temp,
+      "°C"
     );
     const humidityData = this._readValue(
       this.humidityEntity,
@@ -104,7 +118,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const humidity = humidityData.value;
 
     const pmColor = this._getPMColor(pm25);
-    const pmStatus = this._getPMStatus(pm25);
 
     const modeSteps = this._getModeSteps(attrs);
     const currentStepIndex = this._getCurrentStepIndex(modeSteps, attrs);
@@ -112,204 +125,310 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // Cycle tuşuna basıldığında hedeflenen adımı (_pendingStep) entity'nin
     // kendi durumu o adıma ulaşana kadar (veya bir zaman aşımına kadar)
     // göstererek, "Favorite'ten sonra geçici olarak yanlış seviye görünmesi"
-    // gibi yarış durumu kaynaklı kararsızlıkları önlüyoruz: cihazın
-    // preset_mode'u güncellense de percentage attribute'u henüz hedefe
-    // ulaşmamışken en yakın seviyeyi bulma mantığı (Manual1/2/3 arasından)
-    // yanlışlıkla başka bir seviyeyi seçebiliyordu.
-    let activeStep;
+    // gibi yarış durumu kaynaklı kararsızlıkları önlüyoruz.
+    let activeStepIndex;
     if (this._pendingStep) {
       const pending = this._pendingStep;
       const presetMatches =
         (attrs.preset_mode || "").toString().toLowerCase() ===
-        pending.presetMode;
+        pending.step.presetMode;
       const percentageMatches =
-        pending.percentage === null ||
-        pending.percentage === undefined ||
+        pending.step.percentage === null ||
+        pending.step.percentage === undefined ||
         (typeof attrs.percentage === "number" &&
-          Math.abs(attrs.percentage - pending.percentage) <= 1);
+          Math.abs(attrs.percentage - pending.step.percentage) <= 1);
       const expired = Date.now() - pending.ts > 8000;
       if ((presetMatches && percentageMatches) || expired) {
         this._pendingStep = null;
-        activeStep =
-          currentStepIndex !== -1 ? modeSteps[currentStepIndex] : null;
+        activeStepIndex = currentStepIndex;
       } else {
-        activeStep = pending;
+        activeStepIndex = pending.index;
       }
     } else {
-      activeStep = currentStepIndex !== -1 ? modeSteps[currentStepIndex] : null;
+      activeStepIndex = currentStepIndex;
     }
-    if (!activeStep) {
-      activeStep = { presetMode: attrs.preset_mode || attrs.mode || "auto" };
-    }
-    const modeGlyphHtml = this._renderModeGlyph(activeStep);
+    const activeStep =
+      activeStepIndex !== -1 && modeSteps[activeStepIndex]
+        ? modeSteps[activeStepIndex]
+        : { presetMode: attrs.preset_mode || attrs.mode || "auto" };
 
-    // Fan ikonu, cihazın gerçek hızına (percentage) göre döner: düşük hızda
-    // yavaş, yüksek hızda hızlı. percentage bilgisi yoksa (örn. sadece preset
-    // modlu basit cihazlar) orta bir hız varsayılır.
-    let fanSpinDuration = "2.2s";
-    if (state === "on") {
-      const pct =
-        typeof attrs.percentage === "number" ? attrs.percentage : 50;
-      const duration = 3.4 - (Math.max(0, Math.min(100, pct)) / 100) * 2.6;
-      fanSpinDuration = `${Math.max(0.8, duration).toFixed(2)}s`;
-    }
+    const scale = this._getScale();
 
+    // İlk render'da tüm DOM iskeletini bir kere kuruyoruz. Sonraki her
+    // render çağrısında (hass her güncellendiğinde, saniyede birkaç kez
+    // olabiliyor) İSKELETİ YENİDEN YAZMIYORUZ; sadece metin/renk/transform
+    // gibi değişen kısımları güncelliyoruz. Fan ikonundaki CSS animasyonu
+    // bu sayede DOM'dan hiç kopmuyor ve "takılma/sıçrama" olmadan kesintisiz
+    // dönüyor — Home Assistant'ın kendi fan kartının yaptığı da bu.
+    if (!this._built) {
+      this._buildSkeleton();
+    }
+    this._updateSkeleton({
+      state,
+      attrs,
+      pm25Display,
+      pm25Unit: pm25Data.unit,
+      pmColor,
+      temperature,
+      temperatureUnit: temperatureData.unit,
+      humidity,
+      humidityUnit: humidityData.unit,
+      activeStep,
+      scale,
+    });
+  }
+
+  _buildSkeleton() {
     this.innerHTML = `
       <style>
         @keyframes xiaomi-ha-spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        .xap-fan-icon.spinning {
+          animation-name: xiaomi-ha-spin;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
       </style>
-      <ha-card style="
+      <ha-card class="xap-card" style="
         padding: 4px 12px;
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
+        overflow: hidden;
       ">
-        <div style="
+        <div class="xap-row" style="
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
           height: 100%;
         ">
-          <!-- 1. Power toggle (mdi:fan, hıza göre dönen yeşil / sabit gri) -->
-          <div
-            data-action="toggle"
-            style="
-              flex-shrink: 0;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              box-sizing: border-box;
-              cursor: pointer;
-              background: ${state === "on" ? "rgba(76, 175, 80, 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
-            "
-          >
-            <ha-icon icon="mdi:fan" style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 18px;
-              height: 18px;
-              --mdc-icon-size: 18px;
-              color: ${state === "on" ? "#4CAF50" : "var(--secondary-text-color)"};
-              animation: ${state === "on" ? `xiaomi-ha-spin ${fanSpinDuration} linear infinite` : "none"};
-            "></ha-icon>
-          </div>
-
-          <!-- 2. PM2.5 (large) -->
-          <div style="
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            min-width: 0;
-          ">
-            <span style="
-              font-size: 26px;
-              font-weight: 400;
-              color: ${pmColor};
-              line-height: 1.1;
-              letter-spacing: 0px;
-              font-variant-numeric: tabular-nums;
-            ">${pm25Display}</span>
-            <span style="
-              font-size: 9px;
-              margin-top: 3px;
-              color: var(--secondary-text-color);
-            ">${pm25Data.unit}</span>
-          </div>
-
-          <!-- 3. Temperature + humidity -->
-          <div style="
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
+          <!-- 1. Power toggle -->
+          <div class="xap-power" data-action="toggle" style="
             flex-shrink: 0;
-            width: 38px;
-            box-sizing: border-box;
-          ">
-            <div style="
-              display: flex;
-              align-items: center;
-              gap: 2px;
-              font-size: 12px;
-              color: var(--primary-text-color);
-              font-weight: 400;
-            ">
-              <ha-icon icon="mdi:thermometer" style="
-                --mdc-icon-size: 13px;
-                color: var(--secondary-text-color);
-              "></ha-icon>
-              <span>${temperature}${temperatureData.unit === "°" ? "°" : ""}</span>
-            </div>
-            <div style="
-              display: flex;
-              align-items: center;
-              gap: 2px;
-              font-size: 12px;
-              color: var(--primary-text-color);
-              font-weight: 400;
-            ">
-              <ha-icon icon="mdi:water-percent" style="
-                --mdc-icon-size: 13px;
-                color: var(--secondary-text-color);
-              "></ha-icon>
-              <span>${humidity}${humidityData.unit === "%" ? "%" : ""}</span>
-            </div>
-          </div>
-
-          <!-- 4 + 5. Mode indicator + Cycle mode (yakın çift olarak gruplandı) -->
-          <div style="
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 2px;
-            flex-shrink: 0;
+            border-radius: 50%;
+            box-sizing: border-box;
+            cursor: pointer;
           ">
-            <div style="
+            <ha-icon class="xap-fan-icon" icon="mdi:fan" style="
               display: flex;
               align-items: center;
               justify-content: center;
-              flex-shrink: 0;
-              width: 32px;
-              height: 32px;
-              box-sizing: border-box;
-            ">${modeGlyphHtml}</div>
+            "></ha-icon>
+          </div>
 
-            <div
-              data-action="cycle"
-              style="
-                flex-shrink: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 32px;
-                height: 32px;
-                border-radius: 50%;
-                box-sizing: border-box;
-                cursor: pointer;
-                background: rgba(var(--rgb-secondary-text-color), 0.06);
-              "
-            >
-              <ha-icon icon="mdi:swap-horizontal" style="
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 18px;
-                height: 18px;
-                --mdc-icon-size: 18px;
+          <!-- 2. PM2.5 -->
+          <div class="xap-pm-col" style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+          ">
+            <span class="xap-pm-value" style="
+              font-weight: 400;
+              line-height: 1;
+              letter-spacing: 0px;
+              font-variant-numeric: tabular-nums;
+            "></span>
+            <span class="xap-pm-unit" style="
+              color: var(--secondary-text-color);
+            "></span>
+          </div>
+
+          <!-- 3. Temperature + humidity -->
+          <div class="xap-th-col" style="
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex-shrink: 0;
+            box-sizing: border-box;
+          ">
+            <div class="xap-temp-row" style="
+              display: flex;
+              align-items: center;
+              color: var(--primary-text-color);
+              font-weight: 400;
+            ">
+              <ha-icon class="xap-temp-icon" icon="mdi:thermometer" style="
                 color: var(--secondary-text-color);
+                flex-shrink: 0;
               "></ha-icon>
+              <span class="xap-temp-value"></span>
             </div>
+            <div class="xap-hum-row" style="
+              display: flex;
+              align-items: center;
+              color: var(--primary-text-color);
+              font-weight: 400;
+            ">
+              <ha-icon class="xap-hum-icon" icon="mdi:water-percent" style="
+                color: var(--secondary-text-color);
+                flex-shrink: 0;
+              "></ha-icon>
+              <span class="xap-hum-value"></span>
+            </div>
+          </div>
+
+          <!-- 4. Mod tuşu: tek tuş, üzerinde mevcut modun sembolü, basınca
+               bir sonraki moda geçer. Sol/sağ ok ipuçlarıyla "döngüsel"
+               olduğu belli olsun diye küçük oklar var. -->
+          <div class="xap-mode-btn" data-action="cycle" style="
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            box-sizing: border-box;
+            cursor: pointer;
+            position: relative;
+          ">
+            <ha-icon class="xap-arrow-left" icon="mdi:chevron-left" style="
+              position: absolute;
+              color: var(--secondary-text-color);
+              opacity: 0.55;
+              pointer-events: none;
+            "></ha-icon>
+            <div class="xap-mode-glyph" style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            "></div>
+            <ha-icon class="xap-arrow-right" icon="mdi:chevron-right" style="
+              position: absolute;
+              color: var(--secondary-text-color);
+              opacity: 0.55;
+              pointer-events: none;
+            "></ha-icon>
           </div>
         </div>
       </ha-card>`;
+
+    this._els = {
+      fanIcon: this.querySelector(".xap-fan-icon"),
+      power: this.querySelector(".xap-power"),
+      pmValue: this.querySelector(".xap-pm-value"),
+      pmUnit: this.querySelector(".xap-pm-unit"),
+      pmCol: this.querySelector(".xap-pm-col"),
+      thCol: this.querySelector(".xap-th-col"),
+      tempRow: this.querySelector(".xap-temp-row"),
+      humRow: this.querySelector(".xap-hum-row"),
+      tempIcon: this.querySelector(".xap-temp-icon"),
+      humIcon: this.querySelector(".xap-hum-icon"),
+      tempValue: this.querySelector(".xap-temp-value"),
+      humValue: this.querySelector(".xap-hum-value"),
+      modeBtn: this.querySelector(".xap-mode-btn"),
+      modeGlyph: this.querySelector(".xap-mode-glyph"),
+      arrowLeft: this.querySelector(".xap-arrow-left"),
+      arrowRight: this.querySelector(".xap-arrow-right"),
+      row: this.querySelector(".xap-row"),
+    };
+
+    this._built = true;
+    this._lastGlyphKey = null;
+  }
+
+  _updateSkeleton(d) {
+    const els = this._els;
+    const scale = d.scale;
+
+    // --- Ölçeklenen boyutlar (columns 6 -> 9 -> 12 büyüdükçe orantılı) ---
+    const circleSize = Math.round(34 * scale); // güç + mod tuşu çapı
+    const fanIconSize = Math.round(22 * scale); // fan ikonu (büyütüldü)
+    const pmFontSize = Math.round(27 * scale);
+    const pmUnitFontSize = Math.round(9 * scale);
+    const thFontSize = Math.round(12 * scale);
+    const thIconSize = Math.round(13 * scale);
+    const thColWidth = Math.round(42 * scale);
+    const modeGlyphIconSize = Math.round(fanIconSize); // fan ikonuyla aynı boy
+    const arrowSize = Math.round(13 * scale);
+    const gap = Math.round(8 * scale); // ana elemanlar arası boşluk, ölçekle büyür
+
+    els.row.style.gap = `${gap}px`;
+
+    // Güç düğmesi
+    els.power.style.width = `${circleSize}px`;
+    els.power.style.height = `${circleSize}px`;
+    els.power.style.background =
+      d.state === "on"
+        ? "rgba(76, 175, 80, 0.12)"
+        : "rgba(var(--rgb-secondary-text-color), 0.06)";
+
+    els.fanIcon.style.width = `${fanIconSize}px`;
+    els.fanIcon.style.height = `${fanIconSize}px`;
+    els.fanIcon.style.setProperty("--mdc-icon-size", `${fanIconSize}px`);
+    els.fanIcon.style.color =
+      d.state === "on" ? "#4CAF50" : "var(--secondary-text-color)";
+
+    // Fan dönüş hızı, cihazın gerçek percentage'ına göre.
+    if (d.state === "on") {
+      const pct =
+        typeof d.attrs.percentage === "number" ? d.attrs.percentage : 50;
+      const duration = 3.4 - (Math.max(0, Math.min(100, pct)) / 100) * 2.6;
+      const durationStr = `${Math.max(0.8, duration).toFixed(2)}s`;
+      // Süre değiştiğinde bile animasyonu KOPARMADAN güncelliyoruz: class
+      // zaten "spinning" ise sadece animation-duration'ı değiştiriyoruz,
+      // class'ı kaldırıp eklemiyoruz (bu da takılmaya sebep olurdu).
+      if (els.fanIcon.style.animationDuration !== durationStr) {
+        els.fanIcon.style.animationDuration = durationStr;
+      }
+      if (!els.fanIcon.classList.contains("spinning")) {
+        els.fanIcon.classList.add("spinning");
+      }
+    } else {
+      els.fanIcon.classList.remove("spinning");
+      els.fanIcon.style.animationDuration = "";
+    }
+
+    // PM2.5 — dikeyde tam ortalı (kolon flex + justify-content: center ile)
+    els.pmCol.style.gap = `${Math.round(3 * scale)}px`;
+    els.pmValue.style.fontSize = `${pmFontSize}px`;
+    els.pmValue.style.color = d.pmColor;
+    els.pmValue.textContent = d.pm25Display;
+    els.pmUnit.style.fontSize = `${pmUnitFontSize}px`;
+    els.pmUnit.textContent = d.pm25Unit;
+
+    // Sıcaklık + nem
+    els.thCol.style.width = `${thColWidth}px`;
+    els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
+    [els.tempRow, els.humRow].forEach((row) => {
+      row.style.fontSize = `${thFontSize}px`;
+      row.style.gap = `${Math.round(2 * scale)}px`;
+    });
+    [els.tempIcon, els.humIcon].forEach((icon) => {
+      icon.style.width = `${thIconSize}px`;
+      icon.style.height = `${thIconSize}px`;
+      icon.style.setProperty("--mdc-icon-size", `${thIconSize}px`);
+    });
+    // Sıcaklık birimi: entity zaten "°C" gönderiyorsa olduğu gibi, sadece
+    // "°" ya da boş geliyorsa "°C" tamamlanarak gösterilir; entity Fahrenheit
+    // ise (°F) onu da olduğu gibi korur.
+    let tempUnitDisplay = d.temperatureUnit;
+    if (tempUnitDisplay === "°" || !tempUnitDisplay) tempUnitDisplay = "°C";
+    els.tempValue.textContent = `${d.temperature}${tempUnitDisplay}`;
+    els.humValue.textContent = `${d.humidity}${d.humidityUnit === "%" ? "%" : ""}`;
+
+    // Mod tuşu (tek tuş: glyph + sol/sağ ok ipucu)
+    els.modeBtn.style.width = `${circleSize}px`;
+    els.modeBtn.style.height = `${circleSize}px`;
+    els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
+
+    els.arrowLeft.style.left = `${-Math.round(6 * scale)}px`;
+    els.arrowLeft.style.width = `${arrowSize}px`;
+    els.arrowLeft.style.height = `${arrowSize}px`;
+    els.arrowLeft.style.setProperty("--mdc-icon-size", `${arrowSize}px`);
+    els.arrowRight.style.right = `${-Math.round(6 * scale)}px`;
+    els.arrowRight.style.width = `${arrowSize}px`;
+    els.arrowRight.style.height = `${arrowSize}px`;
+    els.arrowRight.style.setProperty("--mdc-icon-size", `${arrowSize}px`);
+
+    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, modeGlyphIconSize);
   }
 
   _getPMColor(value) {
@@ -325,71 +444,53 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return "#9C27B0";
   }
 
-  _getPMStatus(value) {
-    if (value === "--" || value === undefined || value === null) {
-      return "--";
-    }
-    const num = Number(value);
-    if (Number.isNaN(num)) return "--";
-    if (num <= 12) return "Good";
-    if (num <= 35) return "Moderate";
-    if (num <= 55) return "Sensitive";
-    if (num <= 150) return "Poor";
-    return "Very Poor";
-  }
+  // Mod tuşunun ortasındaki sembolü günceller. Auto -> "A", Sleep -> hilal,
+  // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
+  // Gereksiz DOM thrash'ini önlemek için aynı glyph zaten çizilmişse
+  // (key değişmemişse) yeniden yazmaz, sadece boyutunu günceller.
+  _renderModeGlyphInto(container, step, iconSize) {
+    if (!step) return;
 
-  // Mod göstergesinde metin yerine sembol kullanıyoruz: Auto -> "A",
-  // Sleep -> hilal (ay) ikonu, Favorite -> kalp ikonu, tanımadığımız başka
-  // bir preset adı için ismin baş harfi. "Manual" gibi seviyeli bir adımda
-  // (step.level varsa) sayı yerine seviyeye göre 1/2/3 dalgalı (wavy) çizgi
-  // çiziyoruz. Tüm semboller, güç düğmesiyle aynı stilde bir daire
-  // (circle) içine alınıp ortalanır.
-  _renderModeGlyph(step) {
-    if (!step) return "";
-
-    const circleStart = `<div style="
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      box-sizing: border-box;
-      background: rgba(var(--rgb-secondary-text-color), 0.06);
-    ">`;
-    const circleEnd = `</div>`;
-
-    if (step.level) {
-      // Tek bir dalgalı çizgi (mini sinüs eğrisi), seviye sayısı kadar üst üste.
-      const wave = `<svg width="12" height="5" viewBox="0 0 12 5" style="display:block; margin:0.5px 0;">
-        <path d="M1 2.5 Q 3 0.5, 6 2.5 T 11 2.5" stroke="var(--primary-text-color)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-      </svg>`;
-      return `${circleStart}<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">${wave.repeat(step.level)}</div>${circleEnd}`;
-    }
-
+    const level = step.level || 0;
     const preset = (step.presetMode || "").toString().toLowerCase();
-    if (preset === "sleep") {
-      return `${circleStart}<ha-icon icon="mdi:moon-waning-crescent" style="display:flex; align-items:center; justify-content:center; width:16px; height:16px; --mdc-icon-size:16px; color:var(--primary-text-color);"></ha-icon>${circleEnd}`;
+    const key = level ? `level:${level}` : `preset:${preset || step.label || "?"}`;
+
+    if (this._lastGlyphKey !== key) {
+      if (level) {
+        const wave = `<svg width="${Math.round(iconSize * 0.66)}" height="${Math.round(iconSize * 0.28)}" viewBox="0 0 12 5" style="display:block;">
+          <path d="M1 2.5 Q 3 0.5, 6 2.5 T 11 2.5" stroke="var(--primary-text-color)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+        </svg>`;
+        container.innerHTML = `<div class="xap-wave-stack" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;">${wave.repeat(level)}</div>`;
+      } else if (preset === "sleep") {
+        container.innerHTML = `<ha-icon icon="mdi:moon-waning-crescent" class="xap-glyph-icon" style="display:flex; align-items:center; justify-content:center; color:var(--primary-text-color);"></ha-icon>`;
+      } else if (preset === "favorite") {
+        container.innerHTML = `<ha-icon icon="mdi:heart" class="xap-glyph-icon" style="display:flex; align-items:center; justify-content:center; color:var(--primary-text-color);"></ha-icon>`;
+      } else {
+        const source = (step.presetMode || step.label || "?").toString();
+        const letter = source.charAt(0).toUpperCase() || "?";
+        container.innerHTML = `<span class="xap-glyph-letter" style="font-weight:700; color:var(--primary-text-color); line-height:1;">${letter}</span>`;
+      }
+      this._lastGlyphKey = key;
     }
-    if (preset === "favorite") {
-      return `${circleStart}<ha-icon icon="mdi:heart" style="display:flex; align-items:center; justify-content:center; width:16px; height:16px; --mdc-icon-size:16px; color:var(--primary-text-color);"></ha-icon>${circleEnd}`;
+
+    // Boyutu her render'da güncelle (skeleton yeniden yazılmasa bile).
+    const glyphIcon = container.querySelector(".xap-glyph-icon");
+    if (glyphIcon) {
+      glyphIcon.style.width = `${iconSize}px`;
+      glyphIcon.style.height = `${iconSize}px`;
+      glyphIcon.style.setProperty("--mdc-icon-size", `${iconSize}px`);
     }
-    const source = (step.presetMode || step.label || "?").toString();
-    const letter = source.charAt(0).toUpperCase() || "?";
-    return `${circleStart}<span style="font-size:15px; font-weight:700; color:var(--primary-text-color); line-height:1;">${letter}</span>${circleEnd}`;
+    const glyphLetter = container.querySelector(".xap-glyph-letter");
+    if (glyphLetter) {
+      glyphLetter.style.fontSize = `${Math.round(iconSize * 0.85)}px`;
+    }
   }
 
   // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
   // kendi preset_modes sırasını kullanır; kart yapılandırmasında mode_order
-  // verilmişse onu kullanır (sıra entity'de farklıysa, örn. "Favorite"
-  // "Manual"dan önce geliyorsa, istediğiniz sırayı burada belirtebilirsiniz).
-  // "Manual" gibi bir preset, entity'nin kendi speed_list attribute'u
-  // (örn. Level1, Level2, Level3) varsa doğrudan o isimlerle ve o sayıda
-  // alt adıma bölünür. speed_list yoksa percentage_step'ten hesaplanır.
-  // Not: HA'nın eski fan.set_speed servisi kaldırıldığı için kontrol yine
-  // fan.set_percentage ile yapılır; speed_list sadece etiketleme/eşleme
-  // amacıyla, HA'nın kendi ordered_list_item_to_percentage mantığıyla
-  // aynı şekilde percentage'e çevrilerek kullanılır.
+  // verilmişse onu kullanır. "Manual" gibi bir preset, entity'nin kendi
+  // speed_list attribute'u varsa doğrudan o isimlerle ve o sayıda alt adıma
+  // bölünür. speed_list yoksa percentage_step'ten hesaplanır.
   _getModeSteps(attrs) {
     const order =
       this.config?.mode_order && this.config.mode_order.length
@@ -403,13 +504,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     order.forEach((pm) => {
       const isManualLike = pm.toString().toLowerCase() === "manual";
       if (isManualLike && speedList) {
-        // HA'nın ordered_list_item_to_percentage mantığı tam sayı bölmesi
-        // (floor) kullanır: `list_position * 100 // list_len`. Burada
-        // Math.round kullanmak, bazı uzunluklarda (örn. 3 seviye) bir üst
-        // seviyenin sınırını aşan bir yüzde üretir (Level2 = round(66.67) =
-        // 67 ama HA'nın üst sınırı 66'dır), bu da set_percentage çağrıldığında
-        // gerçek cihazın bir sonraki seviyeye değil ondan sonrakine
-        // atlamasına yol açar. Math.floor, HA ile birebir aynı sınırı verir.
         const listLen = speedList.length;
         speedList.forEach((levelName, idx) => {
           const percentage = percentageStep && percentageStep > 0
@@ -419,8 +513,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
             presetMode: pm,
             percentage,
             level: idx + 1,
-            // Cihazın speed_list'teki ismi ne olursa olsun (Level1, Gear1,
-            // vb.) ekranda sade bir sıra numarası gösteriyoruz: 1, 2, 3...
             label: `${idx + 1}`,
           });
         });
@@ -443,8 +535,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
       }
     });
 
-    // preset_modes hiç yoksa ama speed_list / percentage_step bildiren
-    // basit bir fan ise (preset kavramı olmadan doğrudan seviyeli)
     if (!steps.length && speedList) {
       const listLen = speedList.length;
       speedList.forEach((levelName, idx) => {
@@ -488,8 +578,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!candidates.length) return -1;
     if (candidates.length === 1) return candidates[0].i;
 
-    // Aynı preset'e ait birden fazla seviye varsa (Manual1/2/3 gibi),
-    // mevcut yüzdeye en yakın olanı seç.
     let best = candidates[0];
     let bestDiff = Math.abs((best.s.percentage ?? 0) - (currentPercentage ?? 0));
     candidates.forEach((c) => {
@@ -512,8 +600,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const steps = this._getModeSteps(attrs);
 
     if (!steps.length) {
-      // Hiç preset_modes / percentage_step bilgisi olmayan basit cihazlar
-      // için son çare: jenerik bir sabit liste.
       const fallback = ["auto", "silent", "medium", "high"];
       const current = (attrs.preset_mode || attrs.mode || "auto").toLowerCase();
       let idx = fallback.indexOf(current);
@@ -530,6 +616,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const nextIndex = (currentIndex + 1) % steps.length;
     const next = steps[nextIndex];
 
+    this._pendingStep = { step: next, index: nextIndex, ts: Date.now() };
+
     if (next.presetMode) {
       this._hass.callService("fan", "set_preset_mode", {
         entity_id: this.entity,
@@ -542,6 +630,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
         percentage: next.percentage,
       });
     }
+
+    // Optimistic UI: servis çağrısının state'e yansıması birkaç yüz ms
+    // sürebileceğinden, glyph'i hemen yeni adıma göre güncelle.
+    this.render();
   }
 
   _openMoreInfo() {
@@ -557,6 +649,25 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._hass = hass;
     if (this.config) {
       this.render();
+    }
+  }
+
+  connectedCallback() {
+    // Kart DOM'a eklendiğinde / boyutu değişebileceğinden (örn. grid
+    // sütun sayısı sonradan değiştirildiğinde) genişliği izleyip ölçeği
+    // güncelliyoruz.
+    if (!this._resizeObserver && typeof ResizeObserver !== "undefined") {
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._built) this.render();
+      });
+      this._resizeObserver.observe(this);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
     }
   }
 
