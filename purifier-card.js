@@ -212,11 +212,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
           ">
             <span style="
               font-size: 26px;
-              font-weight: 700;
+              font-weight: 500;
               color: ${pmColor};
               line-height: 1.1;
               letter-spacing: 0px;
               font-variant-numeric: tabular-nums;
+              margin-top: 5px;
             ">${pm25Display}</span>
             <span style="
               font-size: 9px;
