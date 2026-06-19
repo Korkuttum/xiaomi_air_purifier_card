@@ -406,12 +406,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     // PM göstergesini ve sıcaklık/nem bloğunu, güç düğmesine göre biraz
     // sağa kaydırıyoruz (küçük ekranlarda güç düğmesiyle PM değerinin
-    // üst üste binmesini engellemek için). Mod tuşunun konumu (sağ kenara
-    // yakın) bu marjından etkilenmiyor, sadece PM ve th-col arasındaki
-    // boşluk biraz daralıyor.
-    const rightShift = Math.round(14 * scale);
-    els.pmCol.style.marginLeft = `${rightShift}px`;
-    els.thCol.style.marginLeft = `${rightShift}px`;
+    // üst üste binmesini engellemek için). transform kullanıyoruz çünkü
+    // margin, pmCol flex:1 olduğundan flexbox tarafından dengelenip
+    // (sağ kenar sabit kalıp) görsel olarak hiçbir şeyi kaydırmıyordu.
+    // transform ise layout hesaplamasına girmediği için gerçekten kaydırır
+    // ve mode/power tuşlarının konumunu etkilemez.
+    const rightShift = Math.round(18 * scale);
+    els.pmValue.style.left = `calc(50% + ${rightShift}px)`;
+    els.pmUnit.style.left = `calc(50% + ${rightShift}px)`;
+    els.thCol.style.transform = `translateX(${rightShift}px)`;
 
     // Güç düğmesi — çerçeve 36x36 sabit, ikon 24x24 sabit.
     els.power.style.background =
