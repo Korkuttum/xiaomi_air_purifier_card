@@ -144,6 +144,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const modeGlyphHtml = this._renderModeGlyph(activeStep);
 
     this.innerHTML = `
+      <style>
+        @keyframes xiaomi-ha-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      </style>
       <ha-card style="
         padding: 4px 12px;
         cursor: pointer;
@@ -157,7 +163,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           gap: 8px;
           height: 100%;
         ">
-          <!-- 1. Power toggle -->
+          <!-- 1. Power toggle (Home Assistant logo, dönen yeşil / sabit gri) -->
           <div
             data-action="toggle"
             style="
@@ -170,17 +176,18 @@ class XiaomiAirPurifierCard extends HTMLElement {
               border-radius: 50%;
               box-sizing: border-box;
               cursor: pointer;
-              background: ${state === "on" ? "rgba(var(--rgb-primary-color), 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
+              background: ${state === "on" ? "rgba(76, 175, 80, 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
             "
           >
-            <ha-icon icon="mdi:air-purifier" style="
+            <ha-icon icon="mdi:home-assistant" style="
               display: flex;
               align-items: center;
               justify-content: center;
               width: 18px;
               height: 18px;
               --mdc-icon-size: 18px;
-              color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
+              color: ${state === "on" ? "#4CAF50" : "var(--secondary-text-color)"};
+              animation: ${state === "on" ? "xiaomi-ha-spin 2.2s linear infinite" : "none"};
             "></ha-icon>
           </div>
 
@@ -245,42 +252,49 @@ class XiaomiAirPurifierCard extends HTMLElement {
             </div>
           </div>
 
-          <!-- 4. Mode indicator -->
+          <!-- 4 + 5. Mode indicator + Cycle mode (yakın çift olarak gruplandı) -->
           <div style="
             display: flex;
             align-items: center;
             justify-content: center;
+            gap: 2px;
             flex-shrink: 0;
-            width: 32px;
-            height: 32px;
-            box-sizing: border-box;
-          ">${modeGlyphHtml}</div>
-
-          <!-- 5. Cycle mode -->
-          <div
-            data-action="cycle"
-            style="
-              flex-shrink: 0;
+          ">
+            <div style="
               display: flex;
               align-items: center;
               justify-content: center;
+              flex-shrink: 0;
               width: 32px;
               height: 32px;
-              border-radius: 50%;
               box-sizing: border-box;
-              cursor: pointer;
-              background: rgba(var(--rgb-secondary-text-color), 0.06);
-            "
-          >
-            <ha-icon icon="mdi:swap-horizontal" style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 18px;
-              height: 18px;
-              --mdc-icon-size: 18px;
-              color: var(--secondary-text-color);
-            "></ha-icon>
+            ">${modeGlyphHtml}</div>
+
+            <div
+              data-action="cycle"
+              style="
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                box-sizing: border-box;
+                cursor: pointer;
+                background: rgba(var(--rgb-secondary-text-color), 0.06);
+              "
+            >
+              <ha-icon icon="mdi:swap-horizontal" style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 18px;
+                height: 18px;
+                --mdc-icon-size: 18px;
+                color: var(--secondary-text-color);
+              "></ha-icon>
+            </div>
           </div>
         </div>
       </ha-card>`;
@@ -315,23 +329,42 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // Mod göstergesinde metin yerine sembol kullanıyoruz: Auto -> "A",
   // Sleep -> hilal (ay) ikonu, Favorite -> kalp ikonu, tanımadığımız başka
   // bir preset adı için ismin baş harfi. "Manual" gibi seviyeli bir adımda
-  // (step.level varsa) sayı yerine seviyeye göre 1/2/3 yatay çizgi çiziyoruz.
+  // (step.level varsa) sayı yerine seviyeye göre 1/2/3 dalgalı (wavy) çizgi
+  // çiziyoruz. Tüm semboller, güç düğmesiyle aynı stilde bir daire
+  // (circle) içine alınıp ortalanır.
   _renderModeGlyph(step) {
     if (!step) return "";
+
+    const circleStart = `<div style="
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      box-sizing: border-box;
+      background: rgba(var(--rgb-secondary-text-color), 0.06);
+    ">`;
+    const circleEnd = `</div>`;
+
     if (step.level) {
-      const bar = `<span style="display:block; width:13px; height:2px; border-radius:1px; background:var(--primary-text-color); margin:1.5px 0;"></span>`;
-      return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">${bar.repeat(step.level)}</div>`;
+      // Tek bir dalgalı çizgi (mini sinüs eğrisi), seviye sayısı kadar üst üste.
+      const wave = `<svg width="14" height="6" viewBox="0 0 14 6" style="display:block; margin:1.5px 0;">
+        <path d="M1 3 Q 4 0.5, 7 3 T 13 3" stroke="var(--primary-text-color)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      </svg>`;
+      return `${circleStart}<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">${wave.repeat(step.level)}</div>${circleEnd}`;
     }
+
     const preset = (step.presetMode || "").toString().toLowerCase();
     if (preset === "sleep") {
-      return `<ha-icon icon="mdi:moon-waning-crescent" style="display:flex; align-items:center; justify-content:center; width:18px; height:18px; --mdc-icon-size:18px; color:var(--primary-text-color);"></ha-icon>`;
+      return `${circleStart}<ha-icon icon="mdi:moon-waning-crescent" style="display:flex; align-items:center; justify-content:center; width:16px; height:16px; --mdc-icon-size:16px; color:var(--primary-text-color);"></ha-icon>${circleEnd}`;
     }
     if (preset === "favorite") {
-      return `<ha-icon icon="mdi:heart" style="display:flex; align-items:center; justify-content:center; width:18px; height:18px; --mdc-icon-size:18px; color:var(--primary-text-color);"></ha-icon>`;
+      return `${circleStart}<ha-icon icon="mdi:heart" style="display:flex; align-items:center; justify-content:center; width:16px; height:16px; --mdc-icon-size:16px; color:var(--primary-text-color);"></ha-icon>${circleEnd}`;
     }
     const source = (step.presetMode || step.label || "?").toString();
     const letter = source.charAt(0).toUpperCase() || "?";
-    return `<span style="font-size:17px; font-weight:700; color:var(--primary-text-color); line-height:1;">${letter}</span>`;
+    return `${circleStart}<span style="font-size:15px; font-weight:700; color:var(--primary-text-color); line-height:1;">${letter}</span>${circleEnd}`;
   }
 
   // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
