@@ -143,6 +143,17 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const modeGlyphHtml = this._renderModeGlyph(activeStep);
 
+    // Fan ikonu, cihazın gerçek hızına (percentage) göre döner: düşük hızda
+    // yavaş, yüksek hızda hızlı. percentage bilgisi yoksa (örn. sadece preset
+    // modlu basit cihazlar) orta bir hız varsayılır.
+    let fanSpinDuration = "2.2s";
+    if (state === "on") {
+      const pct =
+        typeof attrs.percentage === "number" ? attrs.percentage : 50;
+      const duration = 3.4 - (Math.max(0, Math.min(100, pct)) / 100) * 2.6;
+      fanSpinDuration = `${Math.max(0.8, duration).toFixed(2)}s`;
+    }
+
     this.innerHTML = `
       <style>
         @keyframes xiaomi-ha-spin {
@@ -163,7 +174,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           gap: 8px;
           height: 100%;
         ">
-          <!-- 1. Power toggle (Home Assistant logo, dönen yeşil / sabit gri) -->
+          <!-- 1. Power toggle (mdi:fan, hıza göre dönen yeşil / sabit gri) -->
           <div
             data-action="toggle"
             style="
@@ -179,7 +190,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               background: ${state === "on" ? "rgba(76, 175, 80, 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
             "
           >
-            <ha-icon icon="mdi:home-assistant" style="
+            <ha-icon icon="mdi:fan" style="
               display: flex;
               align-items: center;
               justify-content: center;
@@ -187,7 +198,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               height: 18px;
               --mdc-icon-size: 18px;
               color: ${state === "on" ? "#4CAF50" : "var(--secondary-text-color)"};
-              animation: ${state === "on" ? "xiaomi-ha-spin 2.2s linear infinite" : "none"};
+              animation: ${state === "on" ? `xiaomi-ha-spin ${fanSpinDuration} linear infinite` : "none"};
             "></ha-icon>
           </div>
 
@@ -200,7 +211,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             min-width: 0;
           ">
             <span style="
-              font-size: 22px;
+              font-size: 26px;
               font-weight: 700;
               color: ${pmColor};
               line-height: 1.1;
@@ -209,6 +220,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             ">${pm25Display}</span>
             <span style="
               font-size: 9px;
+              margin-top: 3px;
               color: var(--secondary-text-color);
             ">${pm25Data.unit}</span>
           </div>
@@ -226,9 +238,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
               display: flex;
               align-items: center;
               gap: 2px;
-              font-size: 11px;
+              font-size: 12px;
               color: var(--primary-text-color);
-              font-weight: 500;
+              font-weight: 400;
             ">
               <ha-icon icon="mdi:thermometer" style="
                 --mdc-icon-size: 13px;
@@ -240,9 +252,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
               display: flex;
               align-items: center;
               gap: 2px;
-              font-size: 11px;
+              font-size: 12px;
               color: var(--primary-text-color);
-              font-weight: 500;
+              font-weight: 400;
             ">
               <ha-icon icon="mdi:water-percent" style="
                 --mdc-icon-size: 13px;
@@ -349,8 +361,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     if (step.level) {
       // Tek bir dalgalı çizgi (mini sinüs eğrisi), seviye sayısı kadar üst üste.
-      const wave = `<svg width="14" height="6" viewBox="0 0 14 6" style="display:block; margin:1.5px 0;">
-        <path d="M1 3 Q 4 0.5, 7 3 T 13 3" stroke="var(--primary-text-color)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      const wave = `<svg width="12" height="5" viewBox="0 0 12 5" style="display:block; margin:0.5px 0;">
+        <path d="M1 2.5 Q 3 0.5, 6 2.5 T 11 2.5" stroke="var(--primary-text-color)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
       </svg>`;
       return `${circleStart}<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">${wave.repeat(step.level)}</div>${circleEnd}`;
     }
