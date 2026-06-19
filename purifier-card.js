@@ -269,7 +269,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></span>
             <span class="xap-pm-unit" style="
               position: absolute;
-              top: calc(50% + 17px);
+              top: calc(50% + 21px);
               left: 50%;
               transform: translateX(-50%);
               color: var(--secondary-text-color);
@@ -591,10 +591,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
       startY: y,
       progress: 0,
       // Parçacıklar arasında doğal görünmesi için hız/boyut/şeffaflık
-      // hafifçe rastgele.
+      // hafifçe rastgele. Renk artık PM kalite rengiyle eşleştiği için
+      // (yeşil/sarı/turuncu/kırmızı/mor) belirgin görünmesi adına boyut
+      // ve opaklık biraz büyütüldü.
       speed: 0.006 + Math.random() * 0.01,
-      size: 0.6 + Math.random() * 1.3,
-      baseAlpha: 0.25 + Math.random() * 0.4,
+      size: 1.1 + Math.random() * 1.8,
+      baseAlpha: 0.45 + Math.random() * 0.45,
     };
   }
 
