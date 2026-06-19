@@ -242,24 +242,23 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></ha-icon>
           </div>
 
-          <!-- 2. PM2.5 — DEĞER (002) kolonun tam dikey merkezine sabitlenir
-               (position:absolute + translateY(-50%)); birim (µg/m³) ise
-               kendi normal yerinde, değerin biraz altında sabit kalır.
-               İkisi birbirini ortalama hesabına dahil etmez. -->
+          <!-- 2. PM2.5 — DEĞER (002) ve BİRİM (µg/m³) birlikte tek bir blok
+               olarak kolonun dikey merkezine ortalanır (flex column +
+               justify-content:center). Aralarında sabit bir boşluk (gap)
+               olduğu için artık üst üste binmiyorlar; blok bir bütün
+               olarak ortada durduğu için taşma riski de yok. -->
           <div class="xap-pm-col" style="
-            position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             flex: 1 1 0;
             align-self: stretch;
             min-width: 0;
+            min-height: 0;
+            gap: 4px;
           ">
             <span class="xap-pm-value" style="
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
               font-weight: 400;
               line-height: 1;
               letter-spacing: 0px;
@@ -268,13 +267,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
               white-space: nowrap;
             "></span>
             <span class="xap-pm-unit" style="
-              position: absolute;
-              top: calc(50% + 21px);
-              left: 50%;
-              transform: translateX(-50%);
               color: var(--secondary-text-color);
               text-align: center;
               white-space: nowrap;
+              line-height: 1;
             "></span>
           </div>
 
