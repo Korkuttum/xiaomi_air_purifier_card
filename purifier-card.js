@@ -11,7 +11,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.entity) {
-      throw new Error("Lütfen bir fan entity'si belirtin!");
+      throw new Error("Please specify a fan entity!");
     }
     this.config = config;
     this.entity = config.entity;
@@ -59,12 +59,21 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return { value: fallbackValue, unit: fallbackUnit };
   }
 
+  // PM2.5 değerini cihazın kendi ekranındaki gibi 3 haneli, sıfır dolgulu
+  // formatta gösterir (5 -> "005", 15 -> "015", 112 -> "112").
+  _formatPM(value) {
+    if (value === "--" || value === undefined || value === null) return "--";
+    const num = Number(value);
+    if (Number.isNaN(num)) return "--";
+    return Math.round(num).toString().padStart(3, "0");
+  }
+
   render() {
     const fanState = this._hass?.states[this.entity];
     if (!fanState) {
       this.innerHTML = `
         <ha-card style="padding: 12px; color: var(--warning-color);">
-          ⏳ ${this.entity} yükleniyor...
+          ⏳ Loading ${this.entity}...
         </ha-card>
       `;
       return;
@@ -90,6 +99,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     );
 
     const pm25 = pm25Data.value;
+    const pm25Display = this._formatPM(pm25);
     const temperature = temperatureData.value;
     const humidity = humidityData.value;
 
@@ -105,63 +115,61 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     this.innerHTML = `
       <ha-card style="
-        padding: 12px 16px;
-        border-radius: 16px;
+        padding: 10px 12px;
+        border-radius: 12px;
         background: var(--card-background-color);
         box-shadow: var(--ha-card-box-shadow);
-        min-height: 80px;
         cursor: pointer;
-        transition: all 0.2s ease;
+        box-sizing: border-box;
+        height: 100%;
       ">
-
         <div style="
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 8px;
+          justify-content: center;
+          gap: 10px;
           height: 100%;
         ">
-          <!-- 1. Aç/Kapa Butonu -->
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+          <!-- 1. Power toggle -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; flex-shrink: 0;">
             <ha-icon-button
               data-action="toggle"
               style="
                 color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
-                --mdc-icon-button-size: 42px;
+                --mdc-icon-button-size: 38px;
                 background: ${state === "on" ? "rgba(var(--rgb-primary-color), 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
                 border-radius: 50%;
-                padding: 6px;
-                width: 42px;
-                height: 42px;
-                transition: all 0.2s ease;
+                width: 38px;
+                height: 38px;
               "
             >
               <ha-icon icon="${state === "on" ? "mdi:power" : "mdi:power-off"}"></ha-icon>
             </ha-icon-button>
             <span style="
-              font-size: 9px;
+              font-size: 8px;
               color: var(--secondary-text-color);
               text-transform: uppercase;
               letter-spacing: 0.3px;
               font-weight: 500;
-            ">${state === "on" ? "AÇIK" : "KAPALI"}</span>
+            ">${state === "on" ? "ON" : "OFF"}</span>
           </div>
 
-          <!-- 2. PM2.5 (Büyük) -->
+          <!-- 2. PM2.5 (large) -->
           <div style="
             display: flex;
             flex-direction: column;
             align-items: center;
             flex: 1;
-            min-width: 60px;
+            min-width: 0;
           ">
             <span style="
-              font-size: 34px;
+              font-size: 30px;
               font-weight: 700;
               color: ${pmColor};
               line-height: 1.1;
-              letter-spacing: -0.5px;
-            ">${pm25}</span>
+              letter-spacing: 0px;
+              font-variant-numeric: tabular-nums;
+            ">${pm25Display}</span>
             <div style="
               display: flex;
               align-items: center;
@@ -181,46 +189,46 @@ class XiaomiAirPurifierCard extends HTMLElement {
             </div>
           </div>
 
-          <!-- 3. Sıcaklık + Nem (Alt alta) -->
+          <!-- 3. Temperature + humidity -->
           <div style="
             display: flex;
             flex-direction: column;
             gap: 1px;
-            min-width: 38px;
+            flex-shrink: 0;
           ">
             <div style="
               display: flex;
               align-items: center;
               gap: 2px;
-              font-size: 14px;
+              font-size: 13px;
               color: var(--primary-text-color);
               font-weight: 500;
             ">
-              <span style="font-size: 14px;">🌡️</span>
+              <span style="font-size: 13px;">🌡️</span>
               <span>${temperature}${temperatureData.unit === "°" ? "°" : ""}</span>
             </div>
             <div style="
               display: flex;
               align-items: center;
               gap: 2px;
-              font-size: 14px;
+              font-size: 13px;
               color: var(--primary-text-color);
               font-weight: 500;
             ">
-              <span style="font-size: 14px;">💧</span>
+              <span style="font-size: 13px;">💧</span>
               <span>${humidity}${humidityData.unit === "%" ? "%" : ""}</span>
             </div>
           </div>
 
-          <!-- 4. Mod Göstergesi -->
+          <!-- 4. Mode indicator -->
           <div style="
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-width: 44px;
+            flex-shrink: 0;
           ">
             <span style="
-              font-size: 17px;
+              font-size: 16px;
               font-weight: 700;
               color: var(--primary-text-color);
               line-height: 1.1;
@@ -232,22 +240,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
               text-transform: uppercase;
               letter-spacing: 0.3px;
               font-weight: 600;
-            ">MOD</span>
+            ">MODE</span>
           </div>
 
-          <!-- 5. Mod Değiştir (Döngü Okları) -->
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+          <!-- 5. Cycle mode -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; flex-shrink: 0;">
             <ha-icon-button
               data-action="cycle"
               style="
                 color: var(--secondary-text-color);
-                --mdc-icon-button-size: 42px;
+                --mdc-icon-button-size: 38px;
                 background: rgba(var(--rgb-secondary-text-color), 0.06);
                 border-radius: 50%;
-                padding: 6px;
-                width: 42px;
-                height: 42px;
-                transition: all 0.2s ease;
+                width: 38px;
+                height: 38px;
               "
             >
               <ha-icon icon="mdi:sync"></ha-icon>
@@ -258,7 +264,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               text-transform: uppercase;
               letter-spacing: 0.3px;
               font-weight: 600;
-            ">DEĞİŞTİR</span>
+            ">CYCLE</span>
           </div>
         </div>
       </ha-card>
@@ -284,11 +290,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const num = Number(value);
     if (Number.isNaN(num)) return "--";
-    if (num <= 12) return "İyi";
-    if (num <= 35) return "Orta";
-    if (num <= 55) return "Hassas";
-    if (num <= 150) return "Kötü";
-    return "Çok Kötü";
+    if (num <= 12) return "Good";
+    if (num <= 35) return "Moderate";
+    if (num <= 55) return "Sensitive";
+    if (num <= 150) return "Poor";
+    return "Very Poor";
   }
 
   _getModeDisplay(mode) {
@@ -477,6 +483,18 @@ class XiaomiAirPurifierCard extends HTMLElement {
   getCardSize() {
     return 2;
   }
+
+  // Sections (grid) görünümünde kart eklendiğinde varsayılan boyut.
+  // Kullanıcı kart yapılandırmasında kendi grid_options'ını verirse o öncelikli
+  // olur; bu sadece HA'nın önerdiği başlangıç değeridir.
+  getGridOptions() {
+    return {
+      columns: 6,
+      rows: 1,
+      min_columns: 4,
+      max_columns: 12,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -504,13 +522,13 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     }
     this.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:16px; padding:8px 2px;">
-        <ha-entity-picker id="entity_picker" label="Fan / Hava Temizleyici (zorunlu)"></ha-entity-picker>
-        <ha-entity-picker id="pm25_picker" label="PM2.5 Sensörü (opsiyonel)"></ha-entity-picker>
-        <ha-entity-picker id="temperature_picker" label="Sıcaklık Sensörü (opsiyonel)"></ha-entity-picker>
-        <ha-entity-picker id="humidity_picker" label="Nem Sensörü (opsiyonel)"></ha-entity-picker>
+        <ha-entity-picker id="entity_picker" label="Fan / Air Purifier (required)"></ha-entity-picker>
+        <ha-entity-picker id="pm25_picker" label="PM2.5 Sensor (optional)"></ha-entity-picker>
+        <ha-entity-picker id="temperature_picker" label="Temperature Sensor (optional)"></ha-entity-picker>
+        <ha-entity-picker id="humidity_picker" label="Humidity Sensor (optional)"></ha-entity-picker>
         <div style="display:flex; flex-direction:column; gap:4px;">
           <label style="font-size:13px; color: var(--primary-text-color);">
-            Mod Döngü Sırası (opsiyonel)
+            Mode Cycle Order (optional)
           </label>
           <input id="mode_order_input" type="text" placeholder="Auto, Sleep, Manual, Favorite" style="
             padding:10px 12px;
@@ -521,18 +539,19 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
             font-size:14px;
           " />
           <div style="font-size:12px; color: var(--secondary-text-color);">
-            Mod tuşuna basıldığında dolaşılacak sıra. Entity'nizin attribute
-            listesindeki <code>preset_modes</code> isimlerini virgülle ayırarak
-            yazın (büyük/küçük harf önemli). "Manual" gibi bir mod, entity
-            <code>percentage_step</code> bildiriyorsa otomatik olarak alt
-            seviyelere (Manual1, Manual2, ...) bölünür. Boş bırakırsanız
-            entity'nin kendi sırası kullanılır.
+            The order the cycle button steps through. Enter the
+            <code>preset_modes</code> names from your entity's attributes,
+            separated by commas (case sensitive). A mode named "Manual" is
+            automatically split into sub-levels (Manual1, Manual2, ...) if
+            the entity reports a <code>percentage_step</code>. Leave empty to
+            use the entity's own order.
           </div>
         </div>
         <div style="font-size:12px; color: var(--secondary-text-color);">
-          Sıcaklık/nem/PM2.5 sensörlerinizi seçmezseniz, kart bu verileri fan
-          entity'sinin attribute'larından okumayı dener (bazı entegrasyonlarda
-          orada bulunur, bazılarında ayrı sensör entity'si olarak gelir).
+          If you don't select temperature/humidity/PM2.5 sensors, the card
+          tries to read this data from the fan entity's own attributes
+          (some integrations expose it there, others as separate sensor
+          entities).
         </div>
       </div>
     `;
@@ -639,5 +658,5 @@ window.customCards.push({
   type: "xiaomi-air-purifier-card",
   name: "Xiaomi Air Purifier Card",
   preview: true,
-  description: "Xiaomi hava temizleyiciler için minimalist tile kart",
+  description: "Minimalist tile card for Xiaomi air purifiers",
 });
