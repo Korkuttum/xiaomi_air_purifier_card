@@ -166,6 +166,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._updateSkeleton({
       state,
       attrs,
+      pm25,
       pm25Display,
       pm25Unit: pm25Data.unit,
       pmColor,
@@ -199,13 +200,25 @@ class XiaomiAirPurifierCard extends HTMLElement {
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        position: relative;
       ">
+        <canvas class="xap-particles" style="
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 0;
+        "></canvas>
         <div class="xap-row" style="
           display: flex;
           align-items: center;
           justify-content: center;
           flex: 1 1 auto;
           min-height: 0;
+          position: relative;
+          z-index: 1;
         ">
           <!-- 1. Power toggle (sabit 36x36, kart boyutundan etkilenmez) -->
           <div class="xap-power" data-action="toggle" style="
@@ -328,6 +341,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       </ha-card>`;
 
     this._els = {
+      card: this.querySelector(".xap-card"),
       fanIcon: this.querySelector(".xap-fan-icon"),
       power: this.querySelector(".xap-power"),
       pmValue: this.querySelector(".xap-pm-value"),
@@ -343,7 +357,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
       modeBtn: this.querySelector(".xap-mode-btn"),
       modeGlyph: this.querySelector(".xap-mode-glyph"),
       row: this.querySelector(".xap-row"),
+      particlesCanvas: this.querySelector(".xap-particles"),
     };
+
+    // innerHTML yeniden yazılmadan önce eski canvas/RAF/observer varsa
+    // (örn. entity geçici olarak kaybolup tekrar geldiğinde) temizle.
+    this._destroyParticles();
+    this._initParticles();
 
     this._built = true;
     this._lastGlyphKey = null;
@@ -438,6 +458,208 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
 
     this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
+
+    // Toz parçacıkları: fan çalışırken kartın genelinden fan ikonuna doğru
+    // emiliyormuş gibi görünen küçük noktacıklar. Yoğunluk PM2.5 değerine
+    // göre artar/azalır; fan kapalıyken parçacıklar durur.
+    this._updateParticleSystem(d);
+  }
+
+  // ---------------------------------------------------------------------
+  // Toz parçacıkları (Xiaomi uygulamasındakine benzer "emiliyor" efekti)
+  // ---------------------------------------------------------------------
+  // Bir canvas üzerinde, kartın çeşitli noktalarından doğan küçük
+  // noktacıklar fan ikonunun merkezine doğru hızlanarak hareket eder,
+  // yaklaştıkça küçülüp solar ve yeniden doğar. Parçacık sayısı PM2.5
+  // değerine göre belirlenir (hava ne kadar kirliyse o kadar çok parçacık).
+  // Bu katman mevcut DOM yapısına dokunmaz; ha-card'ın arkasına eklenen
+  // ayrı bir <canvas> üzerinde, requestAnimationFrame ile çalışır.
+  _initParticles() {
+    const canvas = this._els.particlesCanvas;
+    if (!canvas) return;
+    this._particleCtx = canvas.getContext("2d");
+    this._particles = [];
+    this._particleTargetCount = 0;
+    this._particlesActive = false;
+    this._particleDpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    if (typeof ResizeObserver !== "undefined") {
+      this._particleResizeObserver = new ResizeObserver(() =>
+        this._resizeParticlesCanvas()
+      );
+      this._particleResizeObserver.observe(this._els.card);
+    }
+    this._resizeParticlesCanvas();
+
+    const loop = () => {
+      this._particleFrame();
+      this._particleRafId = requestAnimationFrame(loop);
+    };
+    this._particleRafId = requestAnimationFrame(loop);
+  }
+
+  _resizeParticlesCanvas() {
+    const canvas = this._els.particlesCanvas;
+    const card = this._els.card;
+    if (!canvas || !card) return;
+    const w = card.clientWidth;
+    const h = card.clientHeight;
+    if (!w || !h) return;
+    const dpr = this._particleDpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    this._particleCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Fan ikonunun canvas içindeki (kart-göreli) merkez koordinatı.
+    const cardRect = card.getBoundingClientRect();
+    const fanRect = this._els.power.getBoundingClientRect();
+    this._fanCenter = {
+      x: fanRect.left - cardRect.left + fanRect.width / 2,
+      y: fanRect.top - cardRect.top + fanRect.height / 2,
+    };
+    this._canvasSize = { w, h };
+  }
+
+  // PM2.5 değerine göre hedef parçacık sayısını ve fan durumuna göre
+  // sistemin aktif olup olmadığını günceller. Gerçek parçacık ekleme/
+  // çıkarma _particleFrame içinde kademeli yapılır (ani sıçrama olmasın).
+  _updateParticleSystem(d) {
+    if (!this._particleCtx) return;
+
+    this._particlesActive = d.state === "on";
+
+    const num = Number(d.pm25);
+    let target;
+    if (!this._particlesActive || Number.isNaN(num)) {
+      target = 0;
+    } else {
+      // PM2.5 ~0 -> 4 parçacık (hafif bir akış her zaman görünsün),
+      // PM2.5 >= 150 -> 28 parçacık (yoğun kirlilik hissi).
+      target = Math.round(4 + (Math.min(Math.max(num, 0), 150) / 150) * 24);
+    }
+    this._particleTargetCount = target;
+
+    // Fan hızına göre parçacıkların emilme hızı da değişsin (HA fan
+    // animasyonuyla aynı percentage mantığını kullanıyoruz).
+    const pct =
+      typeof d.attrs?.percentage === "number" ? d.attrs.percentage : 50;
+    this._particleSpeedFactor = 0.6 + (Math.max(0, Math.min(100, pct)) / 100) * 1.1;
+
+    // Rengi her animasyon karesinde değil, burada (hass güncellemesinde,
+    // RAF'a göre çok daha seyrek) hesaplayıp cache'liyoruz — performans
+    // için, ama tema değişebileceğinden her seferinde tazeliyoruz.
+    const computed = getComputedStyle(this).getPropertyValue(
+      "--secondary-text-color"
+    );
+    this._particleColor = computed && computed.trim() ? computed.trim() : "#9e9e9e";
+  }
+
+  _spawnParticle() {
+    const { w, h } = this._canvasSize || { w: 0, h: 0 };
+    if (!w || !h || !this._fanCenter) return null;
+
+    // Kartın kenarları boyunca (dikdörtgenin çevresinde) rastgele bir
+    // başlangıç noktası seç, ki parçacıklar her yönden fan'a doğru
+    // akıyormuş gibi görünsün.
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    const margin = 2;
+    if (edge === 0) {
+      x = Math.random() * w;
+      y = margin;
+    } else if (edge === 1) {
+      x = w - margin;
+      y = Math.random() * h;
+    } else if (edge === 2) {
+      x = Math.random() * w;
+      y = h - margin;
+    } else {
+      x = margin;
+      y = Math.random() * h;
+    }
+
+    return {
+      x,
+      y,
+      startX: x,
+      startY: y,
+      progress: 0,
+      // Parçacıklar arasında doğal görünmesi için hız/boyut/şeffaflık
+      // hafifçe rastgele.
+      speed: 0.006 + Math.random() * 0.01,
+      size: 0.6 + Math.random() * 1.3,
+      baseAlpha: 0.25 + Math.random() * 0.4,
+    };
+  }
+
+  _particleFrame() {
+    const ctx = this._particleCtx;
+    if (!ctx || !this._canvasSize) return;
+    const { w, h } = this._canvasSize;
+    if (!w || !h) return;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const particles = this._particles;
+    const target = this._particleTargetCount || 0;
+
+    // Hedef sayıya doğru kademeli yaklaş (her frame'de en fazla 1 parçacık
+    // ekle/çıkar) — PM değeri aniden değiştiğinde parçacıklar "patlamaz",
+    // yumuşakça çoğalır/azalır.
+    if (particles.length < target) {
+      const p = this._spawnParticle();
+      if (p) particles.push(p);
+    } else if (particles.length > target) {
+      particles.pop();
+    }
+
+    if (!this._fanCenter || particles.length === 0) return;
+
+    const speedFactor = this._particleSpeedFactor || 1;
+    const fan = this._fanCenter;
+
+    ctx.fillStyle = this._particleColor || "#9e9e9e";
+
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.progress += p.speed * speedFactor;
+
+      if (p.progress >= 1) {
+        // Fan merkezine ulaştı: yeniden doğur (yeni kenar noktası).
+        const fresh = this._spawnParticle();
+        if (fresh) particles[i] = fresh;
+        continue;
+      }
+
+      // Ease-in: başta yavaş, fan'a yaklaştıkça hızlanarak "emilme" hissi.
+      const t = p.progress;
+      const eased = t * t;
+      p.x = p.startX + (fan.x - p.startX) * eased;
+      p.y = p.startY + (fan.y - p.startY) * eased;
+
+      // Merkeze yaklaştıkça küçülüp solar.
+      const fade = 1 - t;
+      const radius = Math.max(0.3, p.size * fade);
+      const alpha = p.baseAlpha * fade;
+
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  _destroyParticles() {
+    if (this._particleRafId) {
+      cancelAnimationFrame(this._particleRafId);
+      this._particleRafId = null;
+    }
+    if (this._particleResizeObserver) {
+      this._particleResizeObserver.disconnect();
+      this._particleResizeObserver = null;
+    }
+    this._particles = [];
   }
 
   _getPMColor(value) {
@@ -687,6 +909,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+    this._destroyParticles();
   }
 
   getCardSize() {
