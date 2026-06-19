@@ -115,36 +115,41 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     this.innerHTML = `
       <ha-card style="
-        padding: 8px 12px;
-        border-radius: 12px;
-        background: var(--card-background-color);
-        box-shadow: var(--ha-card-box-shadow);
+        padding: 4px 12px;
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
+        background: transparent;
+        box-shadow: none;
       ">
         <div style="
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 10px;
+          gap: 8px;
           height: 100%;
         ">
           <!-- 1. Power toggle -->
-          <ha-icon-button
+          <div
             data-action="toggle"
             style="
               flex-shrink: 0;
-              color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
-              --mdc-icon-button-size: 36px;
-              background: ${state === "on" ? "rgba(var(--rgb-primary-color), 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
               border-radius: 50%;
-              width: 36px;
-              height: 36px;
+              box-sizing: border-box;
+              cursor: pointer;
+              background: ${state === "on" ? "rgba(var(--rgb-primary-color), 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
             "
           >
-            <ha-icon icon="${state === "on" ? "mdi:power" : "mdi:power-off"}"></ha-icon>
-          </ha-icon-button>
+            <ha-icon icon="${state === "on" ? "mdi:power" : "mdi:power-off"}" style="
+              --mdc-icon-size: 18px;
+              color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
+            "></ha-icon>
+          </div>
 
           <!-- 2. PM2.5 (large) -->
           <div style="
@@ -155,7 +160,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             min-width: 0;
           ">
             <span style="
-              font-size: 28px;
+              font-size: 22px;
               font-weight: 700;
               color: ${pmColor};
               line-height: 1.1;
@@ -163,7 +168,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               font-variant-numeric: tabular-nums;
             ">${pm25Display}</span>
             <span style="
-              font-size: 10px;
+              font-size: 9px;
               color: var(--secondary-text-color);
             ">${pm25Data.unit}</span>
           </div>
@@ -178,13 +183,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
             <div style="
               display: flex;
               align-items: center;
-              gap: 3px;
-              font-size: 13px;
+              gap: 2px;
+              font-size: 11px;
               color: var(--primary-text-color);
               font-weight: 500;
             ">
               <ha-icon icon="mdi:thermometer" style="
-                --mdc-icon-size: 15px;
+                --mdc-icon-size: 13px;
                 color: var(--secondary-text-color);
               "></ha-icon>
               <span>${temperature}${temperatureData.unit === "°" ? "°" : ""}</span>
@@ -192,13 +197,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
             <div style="
               display: flex;
               align-items: center;
-              gap: 3px;
-              font-size: 13px;
+              gap: 2px;
+              font-size: 11px;
               color: var(--primary-text-color);
               font-weight: 500;
             ">
               <ha-icon icon="mdi:water-percent" style="
-                --mdc-icon-size: 15px;
+                --mdc-icon-size: 13px;
                 color: var(--secondary-text-color);
               "></ha-icon>
               <span>${humidity}${humidityData.unit === "%" ? "%" : ""}</span>
@@ -213,14 +218,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
             flex-shrink: 0;
           ">
             <span style="
-              font-size: 16px;
+              font-size: 13px;
               font-weight: 700;
               color: var(--primary-text-color);
               line-height: 1.1;
               white-space: nowrap;
             ">${modeDisplay}</span>
             <span style="
-              font-size: 8px;
+              font-size: 7px;
               color: var(--secondary-text-color);
               text-transform: uppercase;
               letter-spacing: 0.3px;
@@ -229,20 +234,26 @@ class XiaomiAirPurifierCard extends HTMLElement {
           </div>
 
           <!-- 5. Cycle mode -->
-          <ha-icon-button
+          <div
             data-action="cycle"
             style="
               flex-shrink: 0;
-              color: var(--secondary-text-color);
-              --mdc-icon-button-size: 36px;
-              background: rgba(var(--rgb-secondary-text-color), 0.06);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
               border-radius: 50%;
-              width: 36px;
-              height: 36px;
+              box-sizing: border-box;
+              cursor: pointer;
+              background: rgba(var(--rgb-secondary-text-color), 0.06);
             "
           >
-            <ha-icon icon="mdi:sync"></ha-icon>
-          </ha-icon-button>
+            <ha-icon icon="mdi:sync" style="
+              --mdc-icon-size: 18px;
+              color: var(--secondary-text-color);
+            "></ha-icon>
+          </div>
         </div>
       </ha-card>`;
   }
