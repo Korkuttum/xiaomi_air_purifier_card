@@ -411,7 +411,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // (sağ kenar sabit kalıp) görsel olarak hiçbir şeyi kaydırmıyordu.
     // transform ise layout hesaplamasına girmediği için gerçekten kaydırır
     // ve mode/power tuşlarının konumunu etkilemez.
-    const rightShift = Math.round(6 * scale);
+    const rightShift = Math.round(4 * scale);
     els.pmValue.style.left = `calc(50% + ${rightShift}px)`;
     els.pmUnit.style.left = `calc(50% + ${rightShift}px)`;
     els.thCol.style.transform = `translateX(${rightShift}px)`;
