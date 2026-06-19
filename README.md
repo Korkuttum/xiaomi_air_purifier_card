@@ -68,4 +68,4 @@ If you'd rather not write YAML, click **Edit** (pencil icon) on the card after a
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
