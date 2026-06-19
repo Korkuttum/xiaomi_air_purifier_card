@@ -119,8 +119,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
-        background: transparent;
-        box-shadow: none;
       ">
         <div style="
           display: flex;
@@ -145,7 +143,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
               background: ${state === "on" ? "rgba(var(--rgb-primary-color), 0.12)" : "rgba(var(--rgb-secondary-text-color), 0.06)"};
             "
           >
-            <ha-icon icon="${state === "on" ? "mdi:power" : "mdi:power-off"}" style="
+            <ha-icon icon="mdi:air-purifier" style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 18px;
+              height: 18px;
               --mdc-icon-size: 18px;
               color: ${state === "on" ? "var(--primary-color)" : "var(--secondary-text-color)"};
             "></ha-icon>
@@ -179,6 +182,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
             flex-direction: column;
             gap: 1px;
             flex-shrink: 0;
+            width: 38px;
+            box-sizing: border-box;
           ">
             <div style="
               display: flex;
@@ -215,7 +220,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             flex-shrink: 0;
+            width: 38px;
+            box-sizing: border-box;
           ">
             <span style="
               font-size: 13px;
@@ -223,6 +231,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
               color: var(--primary-text-color);
               line-height: 1.1;
               white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              max-width: 38px;
             ">${modeDisplay}</span>
             <span style="
               font-size: 7px;
@@ -249,7 +260,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
               background: rgba(var(--rgb-secondary-text-color), 0.06);
             "
           >
-            <ha-icon icon="mdi:sync" style="
+            <ha-icon icon="mdi:swap-horizontal" style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 18px;
+              height: 18px;
               --mdc-icon-size: 18px;
               color: var(--secondary-text-color);
             "></ha-icon>
@@ -287,9 +303,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
   _getModeDisplay(mode) {
     // Marka/modele göre sabit bir çeviri sözlüğüne bakmıyoruz; entity hangi
     // mod adını veriyorsa (Auto, Sleep, Favorite, Manual, ya da başka
-    // herhangi bir şey) doğrudan ondan kısa bir etiket türetiyoruz.
+    // herhangi bir şey) doğrudan onu büyük harfle gösteriyoruz (kısaltmadan,
+    // "Auto" -> "AUT" gibi yanlış/eksik görünmesin).
     if (!mode) return "?";
-    return mode.toString().slice(0, 3).toUpperCase();
+    return mode.toString().toUpperCase();
   }
 
   // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
@@ -331,7 +348,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
           steps.push({
             presetMode: pm,
             percentage,
-            label: levelName.toString().toUpperCase(),
+            // Cihazın speed_list'teki ismi ne olursa olsun (Level1, Gear1,
+            // vb.) ekranda sade bir sıra numarası gösteriyoruz: 1, 2, 3...
+            label: `${idx + 1}`,
           });
         });
       } else if (isManualLike && percentageStep && percentageStep > 0) {
@@ -340,14 +359,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
           steps.push({
             presetMode: pm,
             percentage: Math.floor((i * 100) / levels),
-            label: `${pm.toString().slice(0, 3).toUpperCase()}${i}`,
+            label: `${i}`,
           });
         }
       } else {
         steps.push({
           presetMode: pm,
           percentage: null,
-          label: pm.toString().slice(0, 3).toUpperCase(),
+          label: pm.toString().toUpperCase(),
         });
       }
     });
@@ -363,7 +382,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         steps.push({
           presetMode: null,
           percentage,
-          label: levelName.toString().toUpperCase(),
+          label: `${idx + 1}`,
         });
       });
     } else if (!steps.length && percentageStep) {
