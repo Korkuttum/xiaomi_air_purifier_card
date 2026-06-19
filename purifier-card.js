@@ -108,10 +108,40 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     const modeSteps = this._getModeSteps(attrs);
     const currentStepIndex = this._getCurrentStepIndex(modeSteps, attrs);
-    const modeDisplay =
-      currentStepIndex !== -1
-        ? modeSteps[currentStepIndex].label
-        : this._getModeDisplay(attrs.preset_mode || attrs.mode || "auto");
+
+    // Cycle tuşuna basıldığında hedeflenen adımı (_pendingStep) entity'nin
+    // kendi durumu o adıma ulaşana kadar (veya bir zaman aşımına kadar)
+    // göstererek, "Favorite'ten sonra geçici olarak yanlış seviye görünmesi"
+    // gibi yarış durumu kaynaklı kararsızlıkları önlüyoruz: cihazın
+    // preset_mode'u güncellense de percentage attribute'u henüz hedefe
+    // ulaşmamışken en yakın seviyeyi bulma mantığı (Manual1/2/3 arasından)
+    // yanlışlıkla başka bir seviyeyi seçebiliyordu.
+    let activeStep;
+    if (this._pendingStep) {
+      const pending = this._pendingStep;
+      const presetMatches =
+        (attrs.preset_mode || "").toString().toLowerCase() ===
+        pending.presetMode;
+      const percentageMatches =
+        pending.percentage === null ||
+        pending.percentage === undefined ||
+        (typeof attrs.percentage === "number" &&
+          Math.abs(attrs.percentage - pending.percentage) <= 1);
+      const expired = Date.now() - pending.ts > 8000;
+      if ((presetMatches && percentageMatches) || expired) {
+        this._pendingStep = null;
+        activeStep =
+          currentStepIndex !== -1 ? modeSteps[currentStepIndex] : null;
+      } else {
+        activeStep = pending;
+      }
+    } else {
+      activeStep = currentStepIndex !== -1 ? modeSteps[currentStepIndex] : null;
+    }
+    if (!activeStep) {
+      activeStep = { presetMode: attrs.preset_mode || attrs.mode || "auto" };
+    }
+    const modeGlyphHtml = this._renderModeGlyph(activeStep);
 
     this.innerHTML = `
       <ha-card style="
@@ -218,31 +248,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
           <!-- 4. Mode indicator -->
           <div style="
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            width: 38px;
+            width: 32px;
+            height: 32px;
             box-sizing: border-box;
-          ">
-            <span style="
-              font-size: 13px;
-              font-weight: 700;
-              color: var(--primary-text-color);
-              line-height: 1.1;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              max-width: 38px;
-            ">${modeDisplay}</span>
-            <span style="
-              font-size: 7px;
-              color: var(--secondary-text-color);
-              text-transform: uppercase;
-              letter-spacing: 0.3px;
-              font-weight: 600;
-            ">MODE</span>
-          </div>
+          ">${modeGlyphHtml}</div>
 
           <!-- 5. Cycle mode -->
           <div
@@ -300,13 +312,26 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return "Very Poor";
   }
 
-  _getModeDisplay(mode) {
-    // Marka/modele göre sabit bir çeviri sözlüğüne bakmıyoruz; entity hangi
-    // mod adını veriyorsa (Auto, Sleep, Favorite, Manual, ya da başka
-    // herhangi bir şey) doğrudan onu büyük harfle gösteriyoruz (kısaltmadan,
-    // "Auto" -> "AUT" gibi yanlış/eksik görünmesin).
-    if (!mode) return "?";
-    return mode.toString().toUpperCase();
+  // Mod göstergesinde metin yerine sembol kullanıyoruz: Auto -> "A",
+  // Sleep -> hilal (ay) ikonu, Favorite -> kalp ikonu, tanımadığımız başka
+  // bir preset adı için ismin baş harfi. "Manual" gibi seviyeli bir adımda
+  // (step.level varsa) sayı yerine seviyeye göre 1/2/3 yatay çizgi çiziyoruz.
+  _renderModeGlyph(step) {
+    if (!step) return "";
+    if (step.level) {
+      const bar = `<span style="display:block; width:13px; height:2px; border-radius:1px; background:var(--primary-text-color); margin:1.5px 0;"></span>`;
+      return `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">${bar.repeat(step.level)}</div>`;
+    }
+    const preset = (step.presetMode || "").toString().toLowerCase();
+    if (preset === "sleep") {
+      return `<ha-icon icon="mdi:moon-waning-crescent" style="display:flex; align-items:center; justify-content:center; width:18px; height:18px; --mdc-icon-size:18px; color:var(--primary-text-color);"></ha-icon>`;
+    }
+    if (preset === "favorite") {
+      return `<ha-icon icon="mdi:heart" style="display:flex; align-items:center; justify-content:center; width:18px; height:18px; --mdc-icon-size:18px; color:var(--primary-text-color);"></ha-icon>`;
+    }
+    const source = (step.presetMode || step.label || "?").toString();
+    const letter = source.charAt(0).toUpperCase() || "?";
+    return `<span style="font-size:17px; font-weight:700; color:var(--primary-text-color); line-height:1;">${letter}</span>`;
   }
 
   // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
@@ -348,6 +373,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           steps.push({
             presetMode: pm,
             percentage,
+            level: idx + 1,
             // Cihazın speed_list'teki ismi ne olursa olsun (Level1, Gear1,
             // vb.) ekranda sade bir sıra numarası gösteriyoruz: 1, 2, 3...
             label: `${idx + 1}`,
@@ -359,6 +385,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
           steps.push({
             presetMode: pm,
             percentage: Math.floor((i * 100) / levels),
+            level: i,
             label: `${i}`,
           });
         }
@@ -382,6 +409,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         steps.push({
           presetMode: null,
           percentage,
+          level: idx + 1,
           label: `${idx + 1}`,
         });
       });
@@ -391,6 +419,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         steps.push({
           presetMode: null,
           percentage: Math.floor((i * 100) / levels),
+          level: i,
           label: `${i}`,
         });
       }
