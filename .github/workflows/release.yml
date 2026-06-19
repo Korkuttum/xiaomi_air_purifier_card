@@ -13,7 +13,7 @@ jobs:
       - name: ZIP Card Files
         run: |
           cd ${{ github.workspace }}
-          zip -r xiaomi_air_purifier_card.zip purifier-card.js hacs.json
+          zip -r xiaomi_air_purifier_card.zip hacs.json
 
       - name: Upload zip to release
         uses: svenstaro/upload-release-action@v2
