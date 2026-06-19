@@ -197,12 +197,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
         box-sizing: border-box;
         height: 100%;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
       ">
         <div class="xap-row" style="
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 100%;
+          flex: 1 1 auto;
+          min-height: 0;
         ">
           <!-- 1. Power toggle (sabit 36x36, kart boyutundan etkilenmez) -->
           <div class="xap-power" data-action="toggle" style="
@@ -220,22 +223,23 @@ class XiaomiAirPurifierCard extends HTMLElement {
               display: flex;
               align-items: center;
               justify-content: center;
-              width: 36px;
-              height: 36px;
+              width: 24px;
+              height: 24px;
               --mdc-icon-size: 24px;
             "></ha-icon>
           </div>
 
           <!-- 2. PM2.5 — hem yatayda hem dikeyde tam ortalı, kart boyutu
-               değiştikçe de ortalı kalır (flex:1 + center/center). -->
+               değiştikçe de ortalı kalır (flex:1 + center/center +
+               align-self:stretch ile satırın tüm yüksekliğini kaplar). -->
           <div class="xap-pm-col" style="
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             flex: 1 1 0;
+            align-self: stretch;
             min-width: 0;
-            height: 100%;
           ">
             <span class="xap-pm-value" style="
               font-weight: 400;
@@ -251,8 +255,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
           </div>
 
           <!-- 3. Temperature + humidity — kolonun kendisi de yatayda
-               ortalanan bir flex bölgesi içinde, satırlar da kendi
-               içinde ortalı. -->
+               ortalanan bir flex bölgesi içinde. İkon ve değer sütunları
+               sabit genişlikte olduğu için iki satır da tam alt alta
+               hizalanır (ikon ikonun altına, sayı sayının altına). -->
           <div class="xap-th-col" style="
             display: flex;
             flex-direction: column;
@@ -264,28 +269,38 @@ class XiaomiAirPurifierCard extends HTMLElement {
             <div class="xap-temp-row" style="
               display: flex;
               align-items: center;
-              justify-content: center;
               color: var(--primary-text-color);
               font-weight: 400;
             ">
               <ha-icon class="xap-temp-icon" icon="mdi:thermometer" style="
                 color: var(--secondary-text-color);
                 flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
               "></ha-icon>
-              <span class="xap-temp-value"></span>
+              <span class="xap-temp-value" style="
+                display: inline-block;
+                text-align: left;
+              "></span>
             </div>
             <div class="xap-hum-row" style="
               display: flex;
               align-items: center;
-              justify-content: center;
               color: var(--primary-text-color);
               font-weight: 400;
             ">
               <ha-icon class="xap-hum-icon" icon="mdi:water-percent" style="
                 color: var(--secondary-text-color);
                 flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
               "></ha-icon>
-              <span class="xap-hum-value"></span>
+              <span class="xap-hum-value" style="
+                display: inline-block;
+                text-align: left;
+              "></span>
             </div>
           </div>
 
@@ -338,23 +353,23 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const els = this._els;
     const scale = d.scale;
 
-    // --- Sabit boyutlar (kart küçülüp büyüse de DEĞİŞMEZ) ---
-    // Güç düğmesi, fan ikonu, mod tuşu ve mod glyph'i HTML'de zaten 36x36
-    // sabit verildi; burada sadece glyph render'ı için sabit boyutu
-    // referans alıyoruz.
-    const FIXED_ICON_SIZE = 36; // fan ikonu + mod glyph'i, sabit 36x36
+    // --- SABİT boyutlar: kart küçülüp büyüse de hiçbiri değişmez. ---
+    // Sadece elemanlar arasındaki BOŞLUKLAR (gap) kart büyüdükçe açılır.
+    // Güç düğmesi / mod tuşu çerçevesi zaten HTML'de 36x36 sabit verildi.
+    const FIXED_GLYPH_ICON_SIZE = 24; // mod tuşundaki ay/kalp ikonu içi (sabit)
+    const FIXED_PM_FONT = 27;
+    const FIXED_PM_UNIT_FONT = 9;
+    const FIXED_TH_FONT = 12;
+    const FIXED_TH_ICON = 13;
+    const FIXED_TH_VALUE_WIDTH = 34; // değer sütunu sabit genişlik (hizalama için)
 
-    // --- Ölçeklenen boyutlar (columns 6 -> 9 -> 12 büyüdükçe orantılı
-    //     büyüyen tek şey aradaki boşluklar ve metinler) ---
-    const pmFontSize = Math.round(27 * scale);
-    const pmUnitFontSize = Math.round(9 * scale);
-    const thFontSize = Math.round(12 * scale);
-    const thIconSize = Math.round(13 * scale);
-    const gap = Math.round(8 * scale); // ana elemanlar arası boşluk, ölçekle büyür
+    // --- Tek ölçeklenen şey: boşluklar. Kart büyüdükçe elemanlar arası
+    //     mesafe orantılı açılır, elemanların kendisi büyümez. ---
+    const gap = Math.round(8 * scale);
 
     els.row.style.gap = `${gap}px`;
 
-    // Güç düğmesi — sabit 36x36
+    // Güç düğmesi — çerçeve 36x36 sabit, ikon 24x24 sabit.
     els.power.style.background =
       d.state === "on"
         ? "rgba(76, 175, 80, 0.12)"
@@ -363,12 +378,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.fanIcon.style.color =
       d.state === "on" ? "#4CAF50" : "var(--secondary-text-color)";
 
-    // Fan dönüş hızı, cihazın gerçek percentage'ına göre.
+    // Fan dönüş hızı, cihazın gerçek percentage'ına göre. Home Assistant'ın
+    // kendi fan kartındaki dönüş hissine yaklaşmak için süreler kısaltıldı
+    // (daha hızlı dönüyor): min 0.45s (yüksek hız) - max 1.6s (düşük hız).
     if (d.state === "on") {
       const pct =
         typeof d.attrs.percentage === "number" ? d.attrs.percentage : 50;
-      const duration = 3.4 - (Math.max(0, Math.min(100, pct)) / 100) * 2.6;
-      const durationStr = `${Math.max(0.8, duration).toFixed(2)}s`;
+      const duration = 1.6 - (Math.max(0, Math.min(100, pct)) / 100) * 1.15;
+      const durationStr = `${Math.max(0.45, duration).toFixed(2)}s`;
       // Süre değiştiğinde bile animasyonu KOPARMADAN güncelliyoruz: class
       // zaten "spinning" ise sadece animation-duration'ı değiştiriyoruz,
       // class'ı kaldırıp eklemiyoruz (bu da takılmaya sebep olurdu).
@@ -383,28 +400,32 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.fanIcon.style.animationDuration = "";
     }
 
-    // PM2.5 — hem yatay hem dikey tam ortalı; kolon flex:1 olduğu ve
-    // align-items/justify-content: center kullandığı için kart boyutu
-    // değiştikçe de ortalı kalır.
+    // PM2.5 — hem yatay hem dikey tam ortalı; kolon flex:1 + align/justify
+    // center olduğu için kart boyutu değiştikçe de ortalı kalır. Font
+    // boyutu sabit, sadece kolonun kendi içindeki gap scale ile büyür.
     els.pmCol.style.gap = `${Math.round(3 * scale)}px`;
-    els.pmValue.style.fontSize = `${pmFontSize}px`;
+    els.pmValue.style.fontSize = `${FIXED_PM_FONT}px`;
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
-    els.pmUnit.style.fontSize = `${pmUnitFontSize}px`;
+    els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
     els.pmUnit.textContent = d.pm25Unit;
 
-    // Sıcaklık + nem — kolon kendi içinde ortalı, satırlar da kendi
-    // içinde ortalı (yatay + dikey).
+    // Sıcaklık + nem — ikon ve değer için sabit genişlikler veriyoruz ki
+    // iki satır (sıcaklık / nem) tam alt alta hizalansın: ikon ikonun
+    // altına, sayı sayının altına gelsin. Font/ikon boyutu sabit, sadece
+    // satır içi ve satırlar arası gap scale ile büyür.
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
-      row.style.fontSize = `${thFontSize}px`;
+      row.style.fontSize = `${FIXED_TH_FONT}px`;
       row.style.gap = `${Math.round(2 * scale)}px`;
     });
     [els.tempIcon, els.humIcon].forEach((icon) => {
-      icon.style.width = `${thIconSize}px`;
-      icon.style.height = `${thIconSize}px`;
-      icon.style.setProperty("--mdc-icon-size", `${thIconSize}px`);
+      icon.style.width = `${FIXED_TH_ICON}px`;
+      icon.style.height = `${FIXED_TH_ICON}px`;
+      icon.style.setProperty("--mdc-icon-size", `${FIXED_TH_ICON}px`);
     });
+    els.tempValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
+    els.humValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
     // Sıcaklık birimi: entity zaten "°C" gönderiyorsa olduğu gibi, sadece
     // "°" ya da boş geliyorsa "°C" tamamlanarak gösterilir; entity Fahrenheit
     // ise (°F) onu da olduğu gibi korur.
@@ -413,10 +434,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.tempValue.textContent = `${d.temperature}${tempUnitDisplay}`;
     els.humValue.textContent = `${d.humidity}${d.humidityUnit === "%" ? "%" : ""}`;
 
-    // Mod tuşu — sabit 36x36, ok ipuçları kaldırıldı.
+    // Mod tuşu — çerçeve 36x36 sabit, içerik (glyph) 24x24 sabit.
     els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
 
-    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_ICON_SIZE);
+    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
   }
 
   _getPMColor(value) {
@@ -436,8 +457,17 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
   // Gereksiz DOM thrash'ini önlemek için aynı glyph zaten çizilmişse
   // (key değişmemişse) yeniden yazmaz, sadece boyutunu günceller.
-  _renderModeGlyphInto(container, step, iconSize) {
+  // Mod tuşunun ortasındaki sembolü günceller. Auto -> "A", Sleep -> hilal,
+  // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
+  // Ay/kalp ikonu sabit 24px; harf ve dalga glyph'leri önceki (36px
+  // çerçeveye göre ayarlanmış) sabit boyutlarında bırakıldı — kart boyutu
+  // değişse de hiçbiri büyümez/küçülmez.
+  _renderModeGlyphInto(container, step, moonHeartIconSize) {
     if (!step) return;
+
+    const WAVE_WIDTH = 18; // sabit, 36px referansa göre ayarlı (36*0.5)
+    const WAVE_HEIGHT = 8; // sabit (36*0.21, yuvarlanmış)
+    const LETTER_FONT_SIZE = 22; // sabit (36*0.6, yuvarlanmış)
 
     const level = step.level || 0;
     const preset = (step.presetMode || "").toString().toLowerCase();
@@ -445,7 +475,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     if (this._lastGlyphKey !== key) {
       if (level) {
-        const wave = `<svg width="${Math.round(iconSize * 0.5)}" height="${Math.round(iconSize * 0.21)}" viewBox="0 0 12 5" style="display:block;">
+        const wave = `<svg width="${WAVE_WIDTH}" height="${WAVE_HEIGHT}" viewBox="0 0 12 5" style="display:block;">
           <path d="M1 2.5 Q 3 0.5, 6 2.5 T 11 2.5" stroke="var(--primary-text-color)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
         </svg>`;
         container.innerHTML = `<div class="xap-wave-stack" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;">${wave.repeat(level)}</div>`;
@@ -464,13 +494,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // Boyutu her render'da güncelle (skeleton yeniden yazılmasa bile).
     const glyphIcon = container.querySelector(".xap-glyph-icon");
     if (glyphIcon) {
-      glyphIcon.style.width = `${iconSize}px`;
-      glyphIcon.style.height = `${iconSize}px`;
-      glyphIcon.style.setProperty("--mdc-icon-size", `${iconSize}px`);
+      glyphIcon.style.width = `${moonHeartIconSize}px`;
+      glyphIcon.style.height = `${moonHeartIconSize}px`;
+      glyphIcon.style.setProperty("--mdc-icon-size", `${moonHeartIconSize}px`);
     }
     const glyphLetter = container.querySelector(".xap-glyph-letter");
     if (glyphLetter) {
-      glyphLetter.style.fontSize = `${Math.round(iconSize * 0.6)}px`;
+      glyphLetter.style.fontSize = `${LETTER_FONT_SIZE}px`;
     }
   }
 
