@@ -409,7 +409,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // üst üste binmesini engellemek için). Mod tuşunun konumu (sağ kenara
     // yakın) bu marjından etkilenmiyor, sadece PM ve th-col arasındaki
     // boşluk biraz daralıyor.
-    const rightShift = Math.round(14 * scale);
+    const rightShift = Math.round(28 * scale);
     els.pmCol.style.marginLeft = `${rightShift}px`;
     els.thCol.style.marginLeft = `${rightShift}px`;
 
