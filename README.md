@@ -1,10 +1,10 @@
 # Xiaomi Air Purifier Card
 
-<img src="images/animation.gif" width="600" alt="animation">
+<img src="images/animation.gif" width="550" alt="animation">
 
 A minimalist, single-row air purifier / fan card for Home Assistant. It packs power state, PM2.5, temperature, humidity, and mode into one compact card, with a look inspired by Xiaomi's own app.
 
-<img src="images/Purifier.png" width="600" alt="compact">
+<img src="images/purifier.png" width="600" alt="compact">
 
 ## Features
 
