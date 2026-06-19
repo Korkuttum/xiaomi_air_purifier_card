@@ -193,7 +193,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         }
       </style>
       <ha-card class="xap-card" style="
-        padding: 4px 12px;
+        padding: 4px 6px;
         cursor: pointer;
         box-sizing: border-box;
         height: 100%;
@@ -404,6 +404,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     els.row.style.gap = `${gap}px`;
 
+    // PM göstergesini ve sıcaklık/nem bloğunu, güç düğmesine göre biraz
+    // sağa kaydırıyoruz (küçük ekranlarda güç düğmesiyle PM değerinin
+    // üst üste binmesini engellemek için). Mod tuşunun konumu (sağ kenara
+    // yakın) bu marjından etkilenmiyor, sadece PM ve th-col arasındaki
+    // boşluk biraz daralıyor.
+    const rightShift = Math.round(6 * scale);
+    els.pmCol.style.marginLeft = `${rightShift}px`;
+    els.thCol.style.marginLeft = `${rightShift}px`;
+
     // Güç düğmesi — çerçeve 36x36 sabit, ikon 24x24 sabit.
     els.power.style.background =
       d.state === "on"
@@ -451,7 +460,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
       row.style.fontSize = `${FIXED_TH_FONT}px`;
-      row.style.gap = `${Math.round(2 * scale)}px`;
+      // İkon ile değer arasındaki boşluk: öncekinin yarısı (1px yerine 1px
+      // tabanlı scale, eskisi 2*scale idi).
+      row.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     });
     [els.tempIcon, els.humIcon].forEach((icon) => {
       icon.style.width = `${FIXED_TH_ICON}px`;
