@@ -204,12 +204,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
           justify-content: center;
           height: 100%;
         ">
-          <!-- 1. Power toggle -->
+          <!-- 1. Power toggle (sabit 36x36, kart boyutundan etkilenmez) -->
           <div class="xap-power" data-action="toggle" style="
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             box-sizing: border-box;
             cursor: pointer;
@@ -218,16 +220,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
               display: flex;
               align-items: center;
               justify-content: center;
+              width: 36px;
+              height: 36px;
+              --mdc-icon-size: 36px;
             "></ha-icon>
           </div>
 
-          <!-- 2. PM2.5 -->
+          <!-- 2. PM2.5 — hem yatayda hem dikeyde tam ortalı, kart boyutu
+               değiştikçe de ortalı kalır (flex:1 + center/center). -->
           <div class="xap-pm-col" style="
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            flex: 1;
+            flex: 1 1 0;
             min-width: 0;
             height: 100%;
           ">
@@ -236,23 +242,29 @@ class XiaomiAirPurifierCard extends HTMLElement {
               line-height: 1;
               letter-spacing: 0px;
               font-variant-numeric: tabular-nums;
+              text-align: center;
             "></span>
             <span class="xap-pm-unit" style="
               color: var(--secondary-text-color);
+              text-align: center;
             "></span>
           </div>
 
-          <!-- 3. Temperature + humidity -->
+          <!-- 3. Temperature + humidity — kolonun kendisi de yatayda
+               ortalanan bir flex bölgesi içinde, satırlar da kendi
+               içinde ortalı. -->
           <div class="xap-th-col" style="
             display: flex;
             flex-direction: column;
+            align-items: center;
             justify-content: center;
-            flex-shrink: 0;
+            flex: 0 0 auto;
             box-sizing: border-box;
           ">
             <div class="xap-temp-row" style="
               display: flex;
               align-items: center;
+              justify-content: center;
               color: var(--primary-text-color);
               font-weight: 400;
             ">
@@ -265,6 +277,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             <div class="xap-hum-row" style="
               display: flex;
               align-items: center;
+              justify-content: center;
               color: var(--primary-text-color);
               font-weight: 400;
             ">
@@ -276,36 +289,25 @@ class XiaomiAirPurifierCard extends HTMLElement {
             </div>
           </div>
 
-          <!-- 4. Mod tuşu: tek tuş, üzerinde mevcut modun sembolü, basınca
-               bir sonraki moda geçer. Sol/sağ ok ipuçlarıyla "döngüsel"
-               olduğu belli olsun diye küçük oklar var. -->
+          <!-- 4. Mod tuşu: tek tuş (sabit 36x36), üzerinde mevcut modun
+               sembolü, basınca bir sonraki moda geçer. -->
           <div class="xap-mode-btn" data-action="cycle" style="
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             box-sizing: border-box;
             cursor: pointer;
             position: relative;
           ">
-            <ha-icon class="xap-arrow-left" icon="mdi:chevron-left" style="
-              position: absolute;
-              color: var(--secondary-text-color);
-              opacity: 0.55;
-              pointer-events: none;
-            "></ha-icon>
             <div class="xap-mode-glyph" style="
               display: flex;
               align-items: center;
               justify-content: center;
             "></div>
-            <ha-icon class="xap-arrow-right" icon="mdi:chevron-right" style="
-              position: absolute;
-              color: var(--secondary-text-color);
-              opacity: 0.55;
-              pointer-events: none;
-            "></ha-icon>
           </div>
         </div>
       </ha-card>`;
@@ -325,8 +327,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
       humValue: this.querySelector(".xap-hum-value"),
       modeBtn: this.querySelector(".xap-mode-btn"),
       modeGlyph: this.querySelector(".xap-mode-glyph"),
-      arrowLeft: this.querySelector(".xap-arrow-left"),
-      arrowRight: this.querySelector(".xap-arrow-right"),
       row: this.querySelector(".xap-row"),
     };
 
@@ -338,31 +338,28 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const els = this._els;
     const scale = d.scale;
 
-    // --- Ölçeklenen boyutlar (columns 6 -> 9 -> 12 büyüdükçe orantılı) ---
-    const circleSize = Math.round(34 * scale); // güç + mod tuşu çapı
-    const fanIconSize = Math.round(22 * scale); // fan ikonu (büyütüldü)
+    // --- Sabit boyutlar (kart küçülüp büyüse de DEĞİŞMEZ) ---
+    // Güç düğmesi, fan ikonu, mod tuşu ve mod glyph'i HTML'de zaten 36x36
+    // sabit verildi; burada sadece glyph render'ı için sabit boyutu
+    // referans alıyoruz.
+    const FIXED_ICON_SIZE = 36; // fan ikonu + mod glyph'i, sabit 36x36
+
+    // --- Ölçeklenen boyutlar (columns 6 -> 9 -> 12 büyüdükçe orantılı
+    //     büyüyen tek şey aradaki boşluklar ve metinler) ---
     const pmFontSize = Math.round(27 * scale);
     const pmUnitFontSize = Math.round(9 * scale);
     const thFontSize = Math.round(12 * scale);
     const thIconSize = Math.round(13 * scale);
-    const thColWidth = Math.round(42 * scale);
-    const modeGlyphIconSize = Math.round(fanIconSize); // fan ikonuyla aynı boy
-    const arrowSize = Math.round(13 * scale);
     const gap = Math.round(8 * scale); // ana elemanlar arası boşluk, ölçekle büyür
 
     els.row.style.gap = `${gap}px`;
 
-    // Güç düğmesi
-    els.power.style.width = `${circleSize}px`;
-    els.power.style.height = `${circleSize}px`;
+    // Güç düğmesi — sabit 36x36
     els.power.style.background =
       d.state === "on"
         ? "rgba(76, 175, 80, 0.12)"
         : "rgba(var(--rgb-secondary-text-color), 0.06)";
 
-    els.fanIcon.style.width = `${fanIconSize}px`;
-    els.fanIcon.style.height = `${fanIconSize}px`;
-    els.fanIcon.style.setProperty("--mdc-icon-size", `${fanIconSize}px`);
     els.fanIcon.style.color =
       d.state === "on" ? "#4CAF50" : "var(--secondary-text-color)";
 
@@ -386,7 +383,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.fanIcon.style.animationDuration = "";
     }
 
-    // PM2.5 — dikeyde tam ortalı (kolon flex + justify-content: center ile)
+    // PM2.5 — hem yatay hem dikey tam ortalı; kolon flex:1 olduğu ve
+    // align-items/justify-content: center kullandığı için kart boyutu
+    // değiştikçe de ortalı kalır.
     els.pmCol.style.gap = `${Math.round(3 * scale)}px`;
     els.pmValue.style.fontSize = `${pmFontSize}px`;
     els.pmValue.style.color = d.pmColor;
@@ -394,8 +393,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.pmUnit.style.fontSize = `${pmUnitFontSize}px`;
     els.pmUnit.textContent = d.pm25Unit;
 
-    // Sıcaklık + nem
-    els.thCol.style.width = `${thColWidth}px`;
+    // Sıcaklık + nem — kolon kendi içinde ortalı, satırlar da kendi
+    // içinde ortalı (yatay + dikey).
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
       row.style.fontSize = `${thFontSize}px`;
@@ -414,21 +413,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.tempValue.textContent = `${d.temperature}${tempUnitDisplay}`;
     els.humValue.textContent = `${d.humidity}${d.humidityUnit === "%" ? "%" : ""}`;
 
-    // Mod tuşu (tek tuş: glyph + sol/sağ ok ipucu)
-    els.modeBtn.style.width = `${circleSize}px`;
-    els.modeBtn.style.height = `${circleSize}px`;
+    // Mod tuşu — sabit 36x36, ok ipuçları kaldırıldı.
     els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
 
-    els.arrowLeft.style.left = `${-Math.round(6 * scale)}px`;
-    els.arrowLeft.style.width = `${arrowSize}px`;
-    els.arrowLeft.style.height = `${arrowSize}px`;
-    els.arrowLeft.style.setProperty("--mdc-icon-size", `${arrowSize}px`);
-    els.arrowRight.style.right = `${-Math.round(6 * scale)}px`;
-    els.arrowRight.style.width = `${arrowSize}px`;
-    els.arrowRight.style.height = `${arrowSize}px`;
-    els.arrowRight.style.setProperty("--mdc-icon-size", `${arrowSize}px`);
-
-    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, modeGlyphIconSize);
+    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_ICON_SIZE);
   }
 
   _getPMColor(value) {
@@ -457,7 +445,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     if (this._lastGlyphKey !== key) {
       if (level) {
-        const wave = `<svg width="${Math.round(iconSize * 0.66)}" height="${Math.round(iconSize * 0.28)}" viewBox="0 0 12 5" style="display:block;">
+        const wave = `<svg width="${Math.round(iconSize * 0.5)}" height="${Math.round(iconSize * 0.21)}" viewBox="0 0 12 5" style="display:block;">
           <path d="M1 2.5 Q 3 0.5, 6 2.5 T 11 2.5" stroke="var(--primary-text-color)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
         </svg>`;
         container.innerHTML = `<div class="xap-wave-stack" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;">${wave.repeat(level)}</div>`;
@@ -482,7 +470,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const glyphLetter = container.querySelector(".xap-glyph-letter");
     if (glyphLetter) {
-      glyphLetter.style.fontSize = `${Math.round(iconSize * 0.85)}px`;
+      glyphLetter.style.fontSize = `${Math.round(iconSize * 0.6)}px`;
     }
   }
 
