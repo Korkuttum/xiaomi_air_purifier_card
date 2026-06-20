@@ -20,7 +20,7 @@ A minimalist, single-row air purifier / fan card for Home Assistant. It packs po
 ## Installation
 
 1. HACS → Frontend → three-dot menu → **Custom repositories**
-2. Add `https://github.com/Korkuttum/xiaomi_air_purifier_card` and select **Dashboard** as the category
+2. Add ```https://github.com/Korkuttum/xiaomi_air_purifier_card``` and select **Dashboard** as the category
 3. Search for "Xiaomi Air Purifier Card" in HACS and install it
 4. Restart Home Assistant or clear your browser cache
 
