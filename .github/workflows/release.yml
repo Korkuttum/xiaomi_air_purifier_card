@@ -5,21 +5,18 @@ on:
     types: [published]
 
 jobs:
-  release-zip:
+  release-upload:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: ZIP Card Files
-        run: |
-          cd ${{ github.workspace }}
-          zip -r xiaomi_air_purifier_card.zip hacs.json
-
-      - name: Upload zip to release
+      - name: Upload purifier-card.js to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.PAT_TOKEN }}
-          file: ${{ github.workspace }}/xiaomi_air_purifier_card.zip
-          asset_name: xiaomi_air_purifier_card.zip
-          tag: ${{ github.ref }}
+          file: purifier-card.js
+          asset_name: purifier-card.js
+          tag: ${{ github.event.release.tag_name }}
           overwrite: true
