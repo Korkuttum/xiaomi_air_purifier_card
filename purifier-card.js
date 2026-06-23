@@ -13,6 +13,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!config.entity) {
       throw new Error("Please specify a fan entity!");
     }
+    const newLayout = config.layout || "horizontal";
+    if (this._builtLayout && this._builtLayout !== newLayout) {
+      this._built = false;
+    }
     this.config = config;
     this.entity = config.entity;
     this.pm25Entity = config.pm25_entity;
@@ -28,6 +32,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   _handleClick(e) {
+    // Önizleme modunda (entity gerçekten hass'te yoksa) tuşların hiçbir
+    // şey yapmaması için tıklamayı sessizce yutuyoruz.
+    if (this._isPreview) {
+      e.stopPropagation();
+      return;
+    }
     const actionTarget = e.target.closest("[data-action]");
     if (actionTarget) {
       e.stopPropagation();
@@ -81,36 +91,55 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return scale;
   }
 
+  // Kart seçici / önizleme ekranında entity henüz mevcut olmayabilir
+  // (örn. kullanıcının kurulumunda farklı bir entity ID'si vardır). Bu
+  // durumda "Loading..." göstermek yerine sahte verilerle gerçek bir
+  // önizleme çiziyoruz ki kullanıcı kartın nasıl göründüğünü görsün.
+  _getPreviewState() {
+    return {
+      state: "on",
+      attributes: {
+        pm25: 12,
+        temperature: 23,
+        humidity: 45,
+        preset_mode: "auto",
+        percentage: 50,
+        preset_modes: ["Auto", "Sleep", "Favorite"],
+      },
+    };
+  }
+
   render() {
-    const fanState = this._hass?.states[this.entity];
+    let fanState = this._hass?.states[this.entity];
+    this._isPreview = false;
     if (!fanState) {
-      this.innerHTML = `
-        <ha-card style="padding: 12px; color: var(--warning-color);">
-          ⏳ Loading ${this.entity}...
-        </ha-card>
-      `;
-      this._built = false;
-      return;
+      // Entity yoksa (kart seçici önizlemesi gibi) sahte veriyle çiz.
+      fanState = this._getPreviewState();
+      this._isPreview = true;
     }
 
     const state = fanState.state;
     const attrs = fanState.attributes || {};
 
-    const pm25Data = this._readValue(
-      this.pm25Entity,
-      attrs.pm25 || attrs.aqi || attrs.air_quality,
-      "µg/m³"
-    );
-    const temperatureData = this._readValue(
-      this.temperatureEntity,
-      attrs.temperature ?? attrs.temp,
-      "°C"
-    );
-    const humidityData = this._readValue(
-      this.humidityEntity,
-      attrs.humidity,
-      "%"
-    );
+    // Önizleme modunda harici sensör entity'lerini de aramıyoruz;
+    // doğrudan attribute'lardaki sahte verileri kullanıyoruz.
+    const pm25Data = this._isPreview
+      ? { value: attrs.pm25, unit: "µg/m³" }
+      : this._readValue(
+          this.pm25Entity,
+          attrs.pm25 || attrs.aqi || attrs.air_quality,
+          "µg/m³"
+        );
+    const temperatureData = this._isPreview
+      ? { value: attrs.temperature, unit: "°C" }
+      : this._readValue(
+          this.temperatureEntity,
+          attrs.temperature ?? attrs.temp,
+          "°C"
+        );
+    const humidityData = this._isPreview
+      ? { value: attrs.humidity, unit: "%" }
+      : this._readValue(this.humidityEntity, attrs.humidity, "%");
 
     const pm25 = pm25Data.value;
     const pm25Display = this._formatPM(pm25);
@@ -180,6 +209,16 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   _buildSkeleton() {
+    const layout = this.config?.layout || "horizontal";
+    if (layout === "vertical") {
+      this._buildSkeletonVertical();
+    } else {
+      this._buildSkeletonHorizontal();
+    }
+    this._builtLayout = layout;
+  }
+
+  _buildSkeletonHorizontal() {
     this.innerHTML = `
       <style>
         @keyframes xiaomi-ha-spin {
@@ -384,7 +423,193 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._lastGlyphKey = null;
   }
 
+  _buildSkeletonVertical() {
+    this.innerHTML = `
+      <style>
+        @keyframes xiaomi-ha-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .xap-fan-icon.spinning {
+          animation-name: xiaomi-ha-spin;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+      </style>
+      <ha-card class="xap-card" style="
+        padding: 8px 4px;
+        cursor: pointer;
+        box-sizing: border-box;
+        height: 100%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      ">
+        <canvas class="xap-particles" style="
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 0;
+        "></canvas>
+        <div class="xap-row" style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: space-evenly;
+          flex: 1 1 auto;
+          min-height: 0;
+          position: relative;
+          z-index: 1;
+        ">
+          <div class="xap-power" data-action="toggle" style="
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            cursor: pointer;
+          ">
+            <ha-icon class="xap-fan-icon" icon="mdi:fan" style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 24px;
+              height: 24px;
+              --mdc-icon-size: 24px;
+            "></ha-icon>
+          </div>
+
+          <div class="xap-pm-col" style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+          ">
+            <span class="xap-pm-value" style="
+              font-weight: 400;
+              line-height: 1;
+              letter-spacing: 0px;
+              font-variant-numeric: tabular-nums;
+              text-align: center;
+              white-space: nowrap;
+            "></span>
+            <span class="xap-pm-unit" style="
+              color: var(--secondary-text-color);
+              text-align: center;
+              white-space: nowrap;
+              line-height: 1.4;
+            "></span>
+          </div>
+
+          <div class="xap-th-col" style="
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+          ">
+            <div class="xap-temp-row" style="
+              display: flex;
+              align-items: center;
+              color: var(--primary-text-color);
+              font-weight: 400;
+            ">
+              <ha-icon class="xap-temp-icon" icon="mdi:thermometer" style="
+                color: var(--secondary-text-color);
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              "></ha-icon>
+              <span class="xap-temp-value" style="
+                display: inline-block;
+                text-align: left;
+              "></span>
+            </div>
+            <div class="xap-hum-row" style="
+              display: flex;
+              align-items: center;
+              color: var(--primary-text-color);
+              font-weight: 400;
+            ">
+              <ha-icon class="xap-hum-icon" icon="mdi:water-percent" style="
+                color: var(--secondary-text-color);
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              "></ha-icon>
+              <span class="xap-hum-value" style="
+                display: inline-block;
+                text-align: left;
+              "></span>
+            </div>
+          </div>
+
+          <div class="xap-mode-btn" data-action="cycle" style="
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            cursor: pointer;
+            position: relative;
+          ">
+            <div class="xap-mode-glyph" style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            "></div>
+          </div>
+        </div>
+      </ha-card>`;
+
+    this._els = {
+      card: this.querySelector(".xap-card"),
+      fanIcon: this.querySelector(".xap-fan-icon"),
+      power: this.querySelector(".xap-power"),
+      pmValue: this.querySelector(".xap-pm-value"),
+      pmUnit: this.querySelector(".xap-pm-unit"),
+      pmCol: this.querySelector(".xap-pm-col"),
+      thCol: this.querySelector(".xap-th-col"),
+      tempRow: this.querySelector(".xap-temp-row"),
+      humRow: this.querySelector(".xap-hum-row"),
+      tempIcon: this.querySelector(".xap-temp-icon"),
+      humIcon: this.querySelector(".xap-hum-icon"),
+      tempValue: this.querySelector(".xap-temp-value"),
+      humValue: this.querySelector(".xap-hum-value"),
+      modeBtn: this.querySelector(".xap-mode-btn"),
+      modeGlyph: this.querySelector(".xap-mode-glyph"),
+      row: this.querySelector(".xap-row"),
+      particlesCanvas: this.querySelector(".xap-particles"),
+    };
+
+    this._destroyParticles();
+    this._initParticles();
+
+    this._built = true;
+    this._lastGlyphKey = null;
+  }
+
   _updateSkeleton(d) {
+    if ((this.config?.layout || "horizontal") === "vertical") {
+      this._updateSkeletonVertical(d);
+    } else {
+      this._updateSkeletonHorizontal(d);
+    }
+  }
+
+  _updateSkeletonHorizontal(d) {
     const els = this._els;
     const scale = d.scale;
 
@@ -490,6 +715,69 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // Toz parçacıkları: fan çalışırken kartın genelinden fan ikonuna doğru
     // emiliyormuş gibi görünen küçük noktacıklar. Yoğunluk PM2.5 değerine
     // göre artar/azalır; fan kapalıyken parçacıklar durur.
+    this._updateParticleSystem(d);
+  }
+
+  _updateSkeletonVertical(d) {
+    const els = this._els;
+    const scale = d.scale;
+
+    const FIXED_GLYPH_ICON_SIZE = 24;
+    const FIXED_PM_FONT = 36;
+    const FIXED_PM_UNIT_FONT = 10;
+    const FIXED_TH_FONT = 12;
+    const FIXED_TH_ICON = 13;
+    const FIXED_TH_VALUE_WIDTH = 36;
+
+    els.power.style.background =
+      d.state === "on"
+        ? "rgba(76, 175, 80, 0.12)"
+        : "rgba(var(--rgb-secondary-text-color), 0.06)";
+    els.fanIcon.style.color =
+      d.state === "on" ? "#4CAF50" : "var(--secondary-text-color)";
+
+    if (d.state === "on") {
+      const pct =
+        typeof d.attrs.percentage === "number" ? d.attrs.percentage : 50;
+      const duration = 1.6 - (Math.max(0, Math.min(100, pct)) / 100) * 1.15;
+      const durationStr = `${Math.max(0.45, duration).toFixed(2)}s`;
+      if (els.fanIcon.style.animationDuration !== durationStr) {
+        els.fanIcon.style.animationDuration = durationStr;
+      }
+      if (!els.fanIcon.classList.contains("spinning")) {
+        els.fanIcon.classList.add("spinning");
+      }
+    } else {
+      els.fanIcon.classList.remove("spinning");
+      els.fanIcon.style.animationDuration = "";
+    }
+
+    els.pmValue.style.fontSize = `${FIXED_PM_FONT}px`;
+    els.pmValue.style.color = d.pmColor;
+    els.pmValue.textContent = d.pm25Display;
+    els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
+    els.pmUnit.textContent = d.pm25Unit;
+
+    els.thCol.style.gap = `${Math.max(6, Math.round(8 * scale))}px`;
+    [els.tempRow, els.humRow].forEach((row) => {
+      row.style.fontSize = `${FIXED_TH_FONT}px`;
+      row.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
+    });
+    [els.tempIcon, els.humIcon].forEach((icon) => {
+      icon.style.width = `${FIXED_TH_ICON}px`;
+      icon.style.height = `${FIXED_TH_ICON}px`;
+      icon.style.setProperty("--mdc-icon-size", `${FIXED_TH_ICON}px`);
+    });
+    els.tempValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
+    els.humValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
+    let tempUnitDisplay = d.temperatureUnit;
+    if (tempUnitDisplay === "°" || !tempUnitDisplay) tempUnitDisplay = "°C";
+    els.tempValue.textContent = `${d.temperature}${tempUnitDisplay}`;
+    els.humValue.textContent = `${d.humidity}${d.humidityUnit === "%" ? "%" : ""}`;
+
+    els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
+    this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
+
     this._updateParticleSystem(d);
   }
 
@@ -705,8 +993,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
   // Gereksiz DOM thrash'ini önlemek için aynı glyph zaten çizilmişse
   // (key değişmemişse) yeniden yazmaz, sadece boyutunu günceller.
-  // Mod tuşunun ortasındaki sembolü günceller. Auto -> "A", Sleep -> hilal,
-  // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
   // Ay/kalp ikonu sabit 24px; harf ve dalga glyph'leri önceki (36px
   // çerçeveye göre ayarlanmış) sabit boyutlarında bırakıldı — kart boyutu
   // değişse de hiçbiri büyümez/küçülmez.
@@ -946,6 +1232,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // Kullanıcı kart yapılandırmasında kendi grid_options'ını verirse o öncelikli
   // olur; bu sadece HA'nın önerdiği başlangıç değeridir.
   getGridOptions() {
+    if ((this.config?.layout || "horizontal") === "vertical") {
+      return {
+        columns: 3,
+        rows: 3,
+        min_columns: 1,
+        max_columns: 12,
+      };
+    }
     return {
       columns: 6,
       rows: 1,
@@ -985,31 +1279,18 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         <ha-entity-picker id="temperature_picker" label="Temperature Sensor (optional)"></ha-entity-picker>
         <ha-entity-picker id="humidity_picker" label="Humidity Sensor (optional)"></ha-entity-picker>
         <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">
-            Mode Cycle Order (optional)
-          </label>
-          <input id="mode_order_input" type="text" placeholder="Auto, Sleep, Manual, Favorite" style="
+          <label style="font-size:13px; color: var(--primary-text-color);">Layout</label>
+          <select id="layout_select" style="
             padding:10px 12px;
             border-radius:6px;
             border:1px solid var(--divider-color, #ccc);
             background: var(--card-background-color);
             color: var(--primary-text-color);
             font-size:14px;
-          " />
-          <div style="font-size:12px; color: var(--secondary-text-color);">
-            The order the cycle button steps through. Enter the
-            <code>preset_modes</code> names from your entity's attributes,
-            separated by commas (case sensitive). A mode named "Manual" is
-            automatically split into sub-levels (Manual1, Manual2, ...) if
-            the entity reports a <code>percentage_step</code>. Leave empty to
-            use the entity's own order.
-          </div>
-        </div>
-        <div style="font-size:12px; color: var(--secondary-text-color);">
-          If you don't select temperature/humidity/PM2.5 sensors, the card
-          tries to read this data from the fan entity's own attributes
-          (some integrations expose it there, others as separate sensor
-          entities).
+          ">
+            <option value="horizontal">Horizontal — wide, 1 row (default)</option>
+            <option value="vertical">Vertical — narrow, multi-row</option>
+          </select>
         </div>
       </div>
     `;
@@ -1019,7 +1300,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     this._pm25Picker = this.querySelector("#pm25_picker");
     this._temperaturePicker = this.querySelector("#temperature_picker");
     this._humidityPicker = this.querySelector("#humidity_picker");
-    this._modeOrderInput = this.querySelector("#mode_order_input");
+    this._layoutSelect = this.querySelector("#layout_select");
 
     this._entityPicker.includeDomains = ["fan"];
     this._pm25Picker.includeDomains = ["sensor"];
@@ -1038,9 +1319,24 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     this._humidityPicker.addEventListener("value-changed", (e) =>
       this._valueChanged("humidity_entity", e)
     );
-    this._modeOrderInput.addEventListener("change", (e) =>
-      this._modeOrderChanged(e)
-    );
+    this._layoutSelect.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const value = e.target.value;
+      const newConfig = { ...this._config };
+      if (value && value !== "horizontal") {
+        newConfig.layout = value;
+      } else {
+        delete newConfig.layout;
+      }
+      this._config = newConfig;
+      this.dispatchEvent(
+        new CustomEvent("config-changed", {
+          detail: { config: newConfig },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    });
 
     this._updatePickers();
   }
@@ -1058,32 +1354,9 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       this._temperaturePicker.value = this._config?.temperature_entity || "";
     if (this._humidityPicker)
       this._humidityPicker.value = this._config?.humidity_entity || "";
-    if (this._modeOrderInput && document.activeElement !== this._modeOrderInput) {
-      this._modeOrderInput.value = (this._config?.mode_order || []).join(", ");
+    if (this._layoutSelect) {
+      this._layoutSelect.value = this._config?.layout || "horizontal";
     }
-  }
-
-  _modeOrderChanged(ev) {
-    const raw = ev.target.value || "";
-    const list = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    const newConfig = { ...this._config };
-    if (list.length) {
-      newConfig.mode_order = list;
-    } else {
-      delete newConfig.mode_order;
-    }
-    this._config = newConfig;
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: newConfig },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 
   _valueChanged(key, ev) {
