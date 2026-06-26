@@ -1201,11 +1201,18 @@ class XiaomiAirPurifierCard extends HTMLElement {
 }
 
 // =====================================================================
-// Görsel yapılandırma editörü
+// Görsel yapılandırma editörü — Home Assistant ha-form ile
 // =====================================================================
-// İki sekme: "İçerik" (entity'ler, otomatik tespit, layout) ve
-// "Etkileşim" (kart tıklanınca ne olacak). Home Assistant'ın kendi
-// kart editörleriyle aynı çerçeveyi takip ediyor.
+// HA'nın resmi Tile / Entities kartı editörleriyle birebir aynı
+// görünüm: aynı tipografi, aynı input stilleri, katlanabilir
+// "Görünüm" ve "Etkileşim" panelleri, tap_action için HA'nın kendi
+// action editörü (More info / Toggle / Perform action / Navigate /
+// URL / Assist / None — bu seçenekler bizden değil HA'dan geliyor).
+//
+// Tüm form ha-form'a teslim ediliyor; kendi <select> / <input>
+// elemanlarımız YOK. Bu sayede HA tema/tasarımı her zaman bizimkiyle
+// tutarlı kalır ve gelecekteki HA değişikliklerinden ücretsiz olarak
+// faydalanırız.
 class XiaomiAirPurifierCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
@@ -1214,36 +1221,22 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._updateFields();
+    this._render();
   }
 
   connectedCallback() {
     this._render();
   }
 
-  _emitConfig(newConfig) {
-    this._config = newConfig;
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: newConfig },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
+  // ---------- Cihaz/sensör tespit yardımcıları ----------
 
-  // Fan entity'sinin device_id'sini HA entity_registry'sinden bul.
-  // hass.entities en güvenilir kaynak (modern HA). Eski sürümler için
-  // hass.entityRegistry'ye de bakıyoruz.
   _getDeviceIdForEntity(entityId) {
     if (!this._hass || !entityId) return null;
     const reg = this._hass.entities || this._hass.entityRegistry;
     if (!reg) return null;
-    const entry = reg[entityId];
-    return entry?.device_id || null;
+    return reg[entityId]?.device_id || null;
   }
 
-  // Verilen device_id'ye bağlı tüm entity_id'leri döndür.
   _getEntitiesForDevice(deviceId) {
     if (!this._hass || !deviceId) return [];
     const reg = this._hass.entities || this._hass.entityRegistry;
@@ -1253,9 +1246,6 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       .map((e) => e.entity_id);
   }
 
-  // Bir entity'nin "tipi"ni belirle: pm25 / temperature / humidity.
-  // Önce device_class'a, sonra unit_of_measurement'a, son çare olarak
-  // entity_id'deki anahtar kelimelere bakar.
   _classifySensor(entityId) {
     if (!entityId) return null;
     const state = this._hass?.states?.[entityId];
@@ -1274,539 +1264,190 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       return "humidity";
 
     if (id.includes("pm2") || id.includes("pm_2")) return "pm25";
-    if (id.includes("temperature") || id.includes("temp") || id.includes("sicaklik"))
+    if (
+      id.includes("temperature") ||
+      id.includes("temp") ||
+      id.includes("sicaklik")
+    )
       return "temperature";
     if (id.includes("humidity") || id.includes("nem")) return "humidity";
 
     return null;
   }
 
-  // Fan entity'sinin bağlı olduğu cihazdaki PM2.5/sıcaklık/nem sensörlerini
-  // bulup döndür. Birden fazla aday varsa ilkini al. Bulunamayanlar null.
   _detectSensorsFromFan(fanEntityId) {
     const deviceId = this._getDeviceIdForEntity(fanEntityId);
     if (!deviceId) return { pm25: null, temperature: null, humidity: null };
     const siblings = this._getEntitiesForDevice(deviceId);
-
     const result = { pm25: null, temperature: null, humidity: null };
     for (const eid of siblings) {
       if (eid === fanEntityId) continue;
       if (!eid.startsWith("sensor.")) continue;
       const kind = this._classifySensor(eid);
-      if (kind && !result[kind]) {
-        result[kind] = eid;
-      }
+      if (kind && !result[kind]) result[kind] = eid;
     }
     return result;
   }
 
-  // Fan picker değiştiğinde: yeni entity'yi kaydet ve eğer kullanıcı
-  // PM/sıcaklık/nem alanlarını henüz manuel olarak doldurmamışsa, aynı
-  // cihazdaki sensörleri otomatik bul ve doldur. Kullanıcı bir alanı
-  // zaten elle ayarlamışsa ONA DOKUNMAYIZ — bu, "farklı bir sensör seçmek
-  // istersem de seçebileyim" isteğini karşılıyor.
-  _onFanChanged(newFanEntity) {
-    const next = { ...this._config };
-    if (newFanEntity) {
-      next.entity = newFanEntity;
-    } else {
-      delete next.entity;
-    }
+  // ---------- ha-form şeması ----------
+  // HA'nın Tile / Entities card editor'ünün kullandığı pattern: tek bir
+  // ha-form, içinde "expandable" gruplar. Her grup içinde bir alt şema.
+  // selector tipleri (entity, select, ui_action) HA'nın kendi
+  // bileşenlerini doğrudan render eder — biz HTML yazmıyoruz.
+  _schema() {
+    return [
+      // Üstte zorunlu ana entity (fan).
+      {
+        name: "entity",
+        required: true,
+        selector: { entity: { domain: ["fan"] } },
+      },
 
-    if (newFanEntity) {
-      const detected = this._detectSensorsFromFan(newFanEntity);
-      if (!next.pm25_entity && detected.pm25) next.pm25_entity = detected.pm25;
-      if (!next.temperature_entity && detected.temperature)
-        next.temperature_entity = detected.temperature;
-      if (!next.humidity_entity && detected.humidity)
-        next.humidity_entity = detected.humidity;
-    }
+      // GÖRÜNÜM paneli — sensörler + layout.
+      {
+        type: "expandable",
+        name: "",
+        title: "Görünüm",
+        iconPath:
+          "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z",
+        schema: [
+          {
+            name: "pm25_entity",
+            selector: { entity: { domain: ["sensor"] } },
+          },
+          {
+            name: "temperature_entity",
+            selector: { entity: { domain: ["sensor"] } },
+          },
+          {
+            name: "humidity_entity",
+            selector: { entity: { domain: ["sensor"] } },
+          },
+          {
+            name: "layout",
+            selector: {
+              select: {
+                mode: "dropdown",
+                options: [
+                  { value: "horizontal", label: "Yatay" },
+                  { value: "vertical", label: "Dikey" },
+                ],
+              },
+            },
+          },
+        ],
+      },
 
-    this._emitConfig(next);
-    this._updateFields();
+      // ETKİLEŞİM paneli — tap_action. ui_action selector HA'nın action
+      // editörünü olduğu gibi (more-info / toggle / perform-action /
+      // navigate / url / assist / none) getirir.
+      {
+        type: "expandable",
+        name: "",
+        title: "Etkileşim",
+        iconPath:
+          "M11,16.5L5.5,11L7,9.5L11,13.5L17,7.5L18.5,9L11,16.5Z",
+        schema: [
+          {
+            name: "tap_action",
+            selector: { ui_action: {} },
+          },
+        ],
+      },
+    ];
   }
 
-  // "Yeniden tespit et" butonu: kullanıcı manuel doldurmuş olsa bile
-  // sıfırdan cihazın sensörlerini bulup üzerine yazar.
-  _redetectSensors() {
-    const fanEntity = this._config?.entity;
-    if (!fanEntity) return;
-    const detected = this._detectSensorsFromFan(fanEntity);
-    const next = { ...this._config };
-    if (detected.pm25) next.pm25_entity = detected.pm25;
-    if (detected.temperature) next.temperature_entity = detected.temperature;
-    if (detected.humidity) next.humidity_entity = detected.humidity;
-    this._emitConfig(next);
-    this._updateFields();
+  // Şema alan isimleri Türkçe etiketlere eşlenir. ha-form bunu callback
+  // olarak ister; aksi halde alan ismini ham gösterir.
+  _computeLabel(schema) {
+    const labels = {
+      entity: "Fan / Hava temizleyici (gerekli)",
+      pm25_entity: "PM2.5 sensörü",
+      temperature_entity: "Sıcaklık sensörü",
+      humidity_entity: "Nem sensörü",
+      layout: "Yerleşim",
+      tap_action: "Dokunma aksiyonu",
+    };
+    return labels[schema.name] || schema.name || "";
   }
 
-  _setSimpleField(key, value) {
-    const next = { ...this._config };
-    if (value) {
-      next[key] = value;
-    } else {
-      delete next[key];
-    }
-    this._emitConfig(next);
-  }
-
-  _setLayout(value) {
-    const next = { ...this._config };
-    if (value && value !== "horizontal") {
-      next.layout = value;
-    } else {
-      delete next.layout;
-    }
-    this._emitConfig(next);
-  }
-
-  // tap_action nesnesinin tek bir alanını günceller. Action tipi
-  // değiştiğinde, eski tipten kalan ilgisiz alanları temizliyoruz ki
-  // YAML çıktısında çöp olmasın.
-  _updateTapAction(patch) {
-    const current = this._config?.tap_action || { action: "more-info" };
-    const merged = { ...current, ...patch };
-
-    if (patch.action) {
-      // Yeni action'a göre yalnızca onun alanlarını tut.
-      const cleaned = { action: patch.action };
-      if (patch.action === "more-info" && (current.entity || patch.entity)) {
-        cleaned.entity = patch.entity ?? current.entity;
-      }
-      if (patch.action === "call-service") {
-        cleaned.service = current.service || patch.service || "";
-        if (current.service_data || patch.service_data) {
-          cleaned.service_data = patch.service_data ?? current.service_data;
-        }
-      }
-      if (patch.action === "navigate") {
-        cleaned.navigation_path =
-          patch.navigation_path ?? current.navigation_path ?? "";
-      }
-      if (patch.action === "url") {
-        cleaned.url_path = patch.url_path ?? current.url_path ?? "";
-      }
-      Object.assign(merged, {});
-      // merged'i temizle, sadece cleaned kalsın
-      for (const k of Object.keys(merged)) delete merged[k];
-      Object.assign(merged, cleaned);
-    }
-
-    const next = { ...this._config, tap_action: merged };
-    this._emitConfig(next);
-    // Action tipi değiştiyse koşullu alanları yeniden çizmek için
-    // etkileşim bölümünü güncelle.
-    this._renderInteractionFields();
-    this._updateFields();
-  }
+  // ---------- Render ----------
 
   _render() {
-    if (this._rendered) {
-      this._updateFields();
-      return;
+    if (!this._hass) return;
+
+    // ha-form tek bir kere oluşturulur, sonra sadece data/schema güncellenir.
+    if (!this._haForm) {
+      this.innerHTML = "";
+      this._haForm = document.createElement("ha-form");
+      this._haForm.addEventListener("value-changed", (e) =>
+        this._valueChanged(e)
+      );
+      this.appendChild(this._haForm);
     }
-    this.innerHTML = `
-      <div class="xap-editor" style="display:flex; flex-direction:column; gap:16px; padding:8px 2px;">
-        <!-- Sekme başlıkları (HA editör tarzı) -->
-        <div class="xap-tabs" style="
-          display:flex;
-          border-bottom: 1px solid var(--divider-color, #e0e0e0);
-        ">
-          <button type="button" data-tab="content" class="xap-tab" style="
-            flex:1;
-            padding: 12px 16px;
-            background: transparent;
-            border: none;
-            border-bottom: 2px solid transparent;
-            color: var(--primary-text-color);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          ">İçerik</button>
-          <button type="button" data-tab="interactions" class="xap-tab" style="
-            flex:1;
-            padding: 12px 16px;
-            background: transparent;
-            border: none;
-            border-bottom: 2px solid transparent;
-            color: var(--secondary-text-color);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          ">Etkileşim</button>
-        </div>
 
-        <!-- İçerik sekmesi -->
-        <div class="xap-panel" data-panel="content" style="display:flex; flex-direction:column; gap:16px;">
-          <ha-entity-picker id="entity_picker" label="Fan / Air Purifier (gerekli)"></ha-entity-picker>
+    // ha-form için config'i normalize et: tap_action varsayılan olarak
+    // fan'in more-info'su olsun ki kullanıcı etkileşim panelini açtığında
+    // boş değil, anlamlı bir varsayılan görsün.
+    const data = { ...this._config };
+    if (!data.tap_action) {
+      data.tap_action = { action: "more-info" };
+    }
 
-          <div id="device_hint" style="
-            display:none;
-            background: var(--secondary-background-color, #f5f5f5);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-size: 13px;
-            color: var(--secondary-text-color);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-          ">
-            <span id="device_hint_text">Sensörler cihazdan otomatik bulunacak.</span>
-            <button type="button" id="redetect_btn" style="
-              background: var(--primary-color);
-              color: var(--text-primary-color, #fff);
-              border: none;
-              padding: 6px 12px;
-              border-radius: 6px;
-              font-size: 13px;
-              cursor: pointer;
-              white-space: nowrap;
-            ">Yeniden bul</button>
-          </div>
-
-          <ha-entity-picker id="pm25_picker" label="PM2.5 sensörü (opsiyonel)"></ha-entity-picker>
-          <ha-entity-picker id="temperature_picker" label="Sıcaklık sensörü (opsiyonel)"></ha-entity-picker>
-          <ha-entity-picker id="humidity_picker" label="Nem sensörü (opsiyonel)"></ha-entity-picker>
-
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <label style="font-size:13px; color: var(--primary-text-color);">Yerleşim</label>
-            <select id="layout_select" style="
-              padding:10px 12px;
-              border-radius:6px;
-              border:1px solid var(--divider-color, #ccc);
-              background: var(--card-background-color);
-              color: var(--primary-text-color);
-              font-size:14px;
-            ">
-              <option value="horizontal">Yatay — geniş, tek satır (varsayılan)</option>
-              <option value="vertical">Dikey — dar, çok satır</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Etkileşim sekmesi (başlangıçta gizli) -->
-        <div class="xap-panel" data-panel="interactions" style="display:none; flex-direction:column; gap:16px;">
-          <div style="
-            background: var(--secondary-background-color, #f5f5f5);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-size: 13px;
-            color: var(--secondary-text-color);
-          ">
-            Karta dokunulduğunda ne yapılacağını belirler. Güç ve mod tuşları
-            kendi davranışlarını korur — bu ayar yalnızca kartın boş alanına
-            dokunmayı etkiler.
-          </div>
-
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <label style="font-size:13px; color: var(--primary-text-color);">Dokunma aksiyonu</label>
-            <select id="tap_action_type" style="
-              padding:10px 12px;
-              border-radius:6px;
-              border:1px solid var(--divider-color, #ccc);
-              background: var(--card-background-color);
-              color: var(--primary-text-color);
-              font-size:14px;
-            ">
-              <option value="more-info">Bilgi penceresi (more-info)</option>
-              <option value="toggle">Fanı aç/kapat</option>
-              <option value="call-service">Servis çağır</option>
-              <option value="navigate">Sayfaya git</option>
-              <option value="url">URL aç</option>
-              <option value="none">Hiçbir şey yapma</option>
-            </select>
-          </div>
-
-          <div id="tap_action_fields" style="display:flex; flex-direction:column; gap:12px;"></div>
-        </div>
-      </div>
-    `;
-    this._rendered = true;
-
-    this._tabs = this.querySelectorAll(".xap-tab");
-    this._panels = this.querySelectorAll(".xap-panel");
-    this._tabs.forEach((tab) => {
-      tab.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._switchTab(tab.dataset.tab);
-      });
-    });
-
-    this._entityPicker = this.querySelector("#entity_picker");
-    this._pm25Picker = this.querySelector("#pm25_picker");
-    this._temperaturePicker = this.querySelector("#temperature_picker");
-    this._humidityPicker = this.querySelector("#humidity_picker");
-    this._layoutSelect = this.querySelector("#layout_select");
-    this._deviceHint = this.querySelector("#device_hint");
-    this._deviceHintText = this.querySelector("#device_hint_text");
-    this._redetectBtn = this.querySelector("#redetect_btn");
-    this._tapActionType = this.querySelector("#tap_action_type");
-    this._tapActionFields = this.querySelector("#tap_action_fields");
-
-    this._entityPicker.includeDomains = ["fan"];
-    this._pm25Picker.includeDomains = ["sensor"];
-    this._temperaturePicker.includeDomains = ["sensor"];
-    this._humidityPicker.includeDomains = ["sensor"];
-
-    this._entityPicker.addEventListener("value-changed", (e) => {
-      e.stopPropagation();
-      this._onFanChanged(e.detail.value);
-    });
-    this._pm25Picker.addEventListener("value-changed", (e) => {
-      e.stopPropagation();
-      this._setSimpleField("pm25_entity", e.detail.value);
-    });
-    this._temperaturePicker.addEventListener("value-changed", (e) => {
-      e.stopPropagation();
-      this._setSimpleField("temperature_entity", e.detail.value);
-    });
-    this._humidityPicker.addEventListener("value-changed", (e) => {
-      e.stopPropagation();
-      this._setSimpleField("humidity_entity", e.detail.value);
-    });
-    this._layoutSelect.addEventListener("change", (e) => {
-      e.stopPropagation();
-      this._setLayout(e.target.value);
-    });
-    this._redetectBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this._redetectSensors();
-    });
-    this._tapActionType.addEventListener("change", (e) => {
-      e.stopPropagation();
-      this._updateTapAction({ action: e.target.value });
-    });
-
-    this._renderInteractionFields();
-    this._switchTab("content");
-    this._updateFields();
+    this._haForm.hass = this._hass;
+    this._haForm.schema = this._schema();
+    this._haForm.data = data;
+    this._haForm.computeLabel = (s) => this._computeLabel(s);
   }
 
-  _switchTab(tabName) {
-    this._currentTab = tabName;
-    this._tabs.forEach((tab) => {
-      const active = tab.dataset.tab === tabName;
-      tab.style.borderBottomColor = active
-        ? "var(--primary-color)"
-        : "transparent";
-      tab.style.color = active
-        ? "var(--primary-color)"
-        : "var(--secondary-text-color)";
-    });
-    this._panels.forEach((panel) => {
-      panel.style.display = panel.dataset.panel === tabName ? "flex" : "none";
-    });
-  }
+  // ha-form value-changed event'i tüm config'i topluca verir. Burada:
+  // 1) Eğer fan entity değiştiyse, aynı cihazın PM2.5 / sıcaklık / nem
+  //    sensörlerini otomatik tespit et ve BOŞ olanları doldur.
+  // 2) Varsayılan tap_action ({action: "more-info", boş entity}) ise
+  //    YAML çıktısını temiz tutmak için config'ten çıkar (kart zaten
+  //    aynı şeyi varsayılan olarak yapıyor).
+  _valueChanged(ev) {
+    ev.stopPropagation();
+    const incoming = { ...(ev.detail.value || {}) };
 
-  // Aksiyon tipine göre koşullu alanları (entity / service / path / url)
-  // göster. Action tipi değiştiğinde yeniden çağrılır.
-  _renderInteractionFields() {
-    if (!this._tapActionFields) return;
-    const tap = this._config?.tap_action || { action: "more-info" };
-    const type = tap.action || "more-info";
-
-    let html = "";
-    if (type === "more-info") {
-      html = `
-        <ha-entity-picker id="tap_entity_picker"
-          label="Hedef entity (boş bırakılırsa fan açılır)"></ha-entity-picker>
-        <div style="font-size:12px; color: var(--secondary-text-color); margin-top:-4px;">
-          Örn. sıcaklık sensörünü seçerseniz, karta dokununca onun bilgi
-          penceresi açılır.
-        </div>
-      `;
-    } else if (type === "call-service") {
-      html = `
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">Servis (domain.service)</label>
-          <input id="tap_service" type="text" placeholder="örn. fan.set_preset_mode" style="
-            padding:10px 12px;
-            border-radius:6px;
-            border:1px solid var(--divider-color, #ccc);
-            background: var(--card-background-color);
-            color: var(--primary-text-color);
-            font-size:14px;
-          "/>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">Servis verisi (JSON, opsiyonel)</label>
-          <textarea id="tap_service_data" rows="3" placeholder='örn. {"entity_id": "fan.x", "preset_mode": "Sleep"}' style="
-            padding:10px 12px;
-            border-radius:6px;
-            border:1px solid var(--divider-color, #ccc);
-            background: var(--card-background-color);
-            color: var(--primary-text-color);
-            font-size:13px;
-            font-family: var(--code-font-family, monospace);
-            resize: vertical;
-          "></textarea>
-        </div>
-      `;
-    } else if (type === "navigate") {
-      html = `
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">Yol</label>
-          <input id="tap_navigation_path" type="text" placeholder="örn. /lovelace/0" style="
-            padding:10px 12px;
-            border-radius:6px;
-            border:1px solid var(--divider-color, #ccc);
-            background: var(--card-background-color);
-            color: var(--primary-text-color);
-            font-size:14px;
-          "/>
-        </div>
-      `;
-    } else if (type === "url") {
-      html = `
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">URL</label>
-          <input id="tap_url_path" type="text" placeholder="https://..." style="
-            padding:10px 12px;
-            border-radius:6px;
-            border:1px solid var(--divider-color, #ccc);
-            background: var(--card-background-color);
-            color: var(--primary-text-color);
-            font-size:14px;
-          "/>
-        </div>
-      `;
+    const previousFan = this._config?.entity;
+    if (incoming.entity && incoming.entity !== previousFan) {
+      const detected = this._detectSensorsFromFan(incoming.entity);
+      if (!incoming.pm25_entity && detected.pm25)
+        incoming.pm25_entity = detected.pm25;
+      if (!incoming.temperature_entity && detected.temperature)
+        incoming.temperature_entity = detected.temperature;
+      if (!incoming.humidity_entity && detected.humidity)
+        incoming.humidity_entity = detected.humidity;
     }
 
-    this._tapActionFields.innerHTML = html;
-
-    // Yeni eklenen alanlara event'ler bağla.
-    const tapEntityPicker = this.querySelector("#tap_entity_picker");
-    if (tapEntityPicker) {
-      tapEntityPicker.hass = this._hass;
-      // Bu picker'da domain kısıtı yok — kullanıcı herhangi bir entity
-      // (sıcaklık, nem, pm, başka bir cihaz vb.) seçebilsin.
-      tapEntityPicker.value = tap.entity || "";
-      tapEntityPicker.addEventListener("value-changed", (e) => {
-        e.stopPropagation();
-        this._updateTapAction({ entity: e.detail.value || undefined });
-      });
-    }
-    const tapService = this.querySelector("#tap_service");
-    if (tapService) {
-      tapService.value = tap.service || "";
-      tapService.addEventListener("input", (e) => {
-        this._updateTapActionDebounced({ service: e.target.value });
-      });
-    }
-    const tapServiceData = this.querySelector("#tap_service_data");
-    if (tapServiceData) {
-      tapServiceData.value = tap.service_data
-        ? JSON.stringify(tap.service_data, null, 2)
-        : "";
-      tapServiceData.addEventListener("input", (e) => {
-        const raw = e.target.value.trim();
-        if (!raw) {
-          this._updateTapActionDebounced({ service_data: undefined });
-          return;
-        }
-        try {
-          const parsed = JSON.parse(raw);
-          this._updateTapActionDebounced({ service_data: parsed });
-        } catch (err) {
-          // Geçersiz JSON'da config'i kirletmiyoruz; kullanıcı yazmaya
-          // devam ederken sessizce bekliyoruz.
-        }
-      });
-    }
-    const tapNav = this.querySelector("#tap_navigation_path");
-    if (tapNav) {
-      tapNav.value = tap.navigation_path || "";
-      tapNav.addEventListener("input", (e) => {
-        this._updateTapActionDebounced({ navigation_path: e.target.value });
-      });
-    }
-    const tapUrl = this.querySelector("#tap_url_path");
-    if (tapUrl) {
-      tapUrl.value = tap.url_path || "";
-      tapUrl.addEventListener("input", (e) => {
-        this._updateTapActionDebounced({ url_path: e.target.value });
-      });
-    }
-  }
-
-  // Metin alanı her tuş vuruşunda config emit etmek istemiyoruz; küçük
-  // bir gecikmeyle birleştiriyoruz. Bu, _updateTapAction'ı action tipi
-  // değiştirmeden çağırır (alan temizleme mantığını tetiklemez).
-  _updateTapActionDebounced(patch) {
-    clearTimeout(this._tapDebounce);
-    this._tapDebounce = setTimeout(() => {
-      const current = this._config?.tap_action || { action: "more-info" };
-      const merged = { ...current };
-      for (const [k, v] of Object.entries(patch)) {
-        if (v === undefined || v === "" || v === null) {
-          delete merged[k];
-        } else {
-          merged[k] = v;
-        }
-      }
-      const next = { ...this._config, tap_action: merged };
-      this._emitConfig(next);
-    }, 250);
-  }
-
-  _updateFields() {
-    if (!this._rendered || !this._hass) return;
-
-    [
-      this._entityPicker,
-      this._pm25Picker,
-      this._temperaturePicker,
-      this._humidityPicker,
-    ].forEach((p) => {
-      if (p) p.hass = this._hass;
-    });
-
-    if (this._entityPicker)
-      this._entityPicker.value = this._config?.entity || "";
-    if (this._pm25Picker)
-      this._pm25Picker.value = this._config?.pm25_entity || "";
-    if (this._temperaturePicker)
-      this._temperaturePicker.value = this._config?.temperature_entity || "";
-    if (this._humidityPicker)
-      this._humidityPicker.value = this._config?.humidity_entity || "";
-    if (this._layoutSelect)
-      this._layoutSelect.value = this._config?.layout || "horizontal";
-
-    // Cihaz ipucu paneli
-    if (this._deviceHint) {
-      const fanId = this._config?.entity;
-      const deviceId = fanId ? this._getDeviceIdForEntity(fanId) : null;
-      if (deviceId) {
-        const siblings = this._getEntitiesForDevice(deviceId);
-        const sensorCount = siblings.filter((e) =>
-          e.startsWith("sensor.")
-        ).length;
-        this._deviceHint.style.display = "flex";
-        this._deviceHintText.textContent = `Bu cihaza bağlı ${sensorCount} sensör bulundu. Boş alanlar otomatik dolduruldu; istediğinizi elle değiştirebilirsiniz.`;
-      } else if (fanId) {
-        this._deviceHint.style.display = "flex";
-        this._deviceHintText.textContent =
-          "Bu fan bir cihaza kayıtlı görünmüyor; sensörleri elle seçmeniz gerekiyor.";
-      } else {
-        this._deviceHint.style.display = "none";
-      }
+    // tap_action sadeleştirme: salt varsayılan ise YAML'a yazma.
+    if (incoming.tap_action) {
+      const ta = incoming.tap_action;
+      const isDefault =
+        (ta.action === "more-info" || !ta.action) &&
+        !ta.entity &&
+        !ta.service &&
+        !ta.navigation_path &&
+        !ta.url_path;
+      if (isDefault) delete incoming.tap_action;
     }
 
-    // Etkileşim sekmesi
-    if (this._tapActionType) {
-      this._tapActionType.value =
-        this._config?.tap_action?.action || "more-info";
+    // Boş string'leri temizle (ha-form bazı alanlarda boş string emit eder).
+    for (const k of Object.keys(incoming)) {
+      if (incoming[k] === "" || incoming[k] === null) delete incoming[k];
     }
-    const tapEntityPicker = this.querySelector("#tap_entity_picker");
-    if (tapEntityPicker) {
-      tapEntityPicker.hass = this._hass;
-      tapEntityPicker.value = this._config?.tap_action?.entity || "";
-    }
+    // layout: horizontal varsayılan olduğu için config'e yazmaya gerek yok.
+    if (incoming.layout === "horizontal") delete incoming.layout;
+
+    this._config = incoming;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: incoming },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 }
 
