@@ -1426,6 +1426,13 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     if (!data.tap_action) {
       data.tap_action = { action: "more-info" };
     }
+    // Layout config'te tutulmasa bile (varsayılan = horizontal, YAML'da
+    // gerekmiyor) ha-form kutucuğunun seçili görünmesi için burada
+    // doldur. _valueChanged'da horizontal hâlâ siliniyor, böylece YAML
+    // çıktısı temiz kalır ama UI'da kutu hep seçili görünür.
+    if (!data.layout) {
+      data.layout = "horizontal";
+    }
 
     this._haForm.hass = this._hass;
     this._haForm.schema = this._schema();
