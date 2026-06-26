@@ -1303,13 +1303,14 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         selector: { entity: { domain: ["fan"] } },
       },
 
-      // GÖRÜNÜM paneli — sensörler + layout.
+      // SENSÖRLER paneli — fan'in PM2.5 / sıcaklık / nem yardımcı sensörleri.
+      // Fan seçildiğinde otomatik tespit edilip boş alanlara yazılırlar.
       {
         type: "expandable",
         name: "",
-        title: "Görünüm",
+        title: "Sensörler",
         iconPath:
-          "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z",
+          "M15,13V5A3,3 0 0,0 12,2A3,3 0 0,0 9,5V13A5,5 0 1,0 15,13M12,4A1,1 0 0,1 13,5V8H11V5A1,1 0 0,1 12,4Z",
         schema: [
           {
             name: "pm25_entity",
@@ -1323,14 +1324,46 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
             name: "humidity_entity",
             selector: { entity: { domain: ["sensor"] } },
           },
+        ],
+      },
+
+      // GÖRÜNÜM paneli — layout, HA Tile card editöründekiyle birebir
+      // aynı kutucuk seçici (mode: "box"). HA'nın kendi tile content
+      // layout görsellerini yeniden kullanıyoruz; aydınlık/karanlık tema
+      // ve RTL otomatik destekli.
+      {
+        type: "expandable",
+        name: "",
+        title: "Görünüm",
+        iconPath:
+          "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z",
+        schema: [
           {
             name: "layout",
             selector: {
               select: {
-                mode: "dropdown",
+                mode: "box",
+                box_max_columns: 2,
                 options: [
-                  { value: "horizontal", label: "Yatay" },
-                  { value: "vertical", label: "Dikey" },
+                  {
+                    value: "horizontal",
+                    label: "Yatay",
+                    image: {
+                      src: "/static/images/form/tile_content_layout_horizontal.svg",
+                      src_dark:
+                        "/static/images/form/tile_content_layout_horizontal_dark.svg",
+                      flip_rtl: true,
+                    },
+                  },
+                  {
+                    value: "vertical",
+                    label: "Dikey",
+                    image: {
+                      src: "/static/images/form/tile_content_layout_vertical.svg",
+                      src_dark:
+                        "/static/images/form/tile_content_layout_vertical_dark.svg",
+                    },
+                  },
                 ],
               },
             },
