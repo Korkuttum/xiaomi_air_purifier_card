@@ -23,83 +23,192 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.temperatureEntity = config.temperature_entity;
     this.humidityEntity = config.humidity_entity;
 
-    // tap_action: HA standart formatı. Varsayılan: fan more-info aç.
-    // Şekil: { action: "more-info" | "toggle" | "call-service" | "navigate" | "url" | "none",
-    //          entity?: string,           // more-info için hedef entity
-    //          service?: string,          // call-service için (örn. "fan.toggle")
-    //          service_data?: object,     // call-service için
-    //          navigation_path?: string,  // navigate için
-    //          url_path?: string }        // url için
-    this.tapAction = config.tap_action || { action: "more-info" };
+    // İkon (fan ikonu / güç düğmesi) için 3 aksiyon. Varsayılanlar HA
+    // Tile card'la aynı tarzda: ikona dokun → cihazı aç/kapat; hold ve
+    // double-tap kapalı. Kullanıcı her birini ui_action editöründen
+    // istediği gibi değiştirebilir.
+    this.iconTapAction = config.icon_tap_action || { action: "toggle" };
+    this.iconHoldAction = config.icon_hold_action || { action: "none" };
+    this.iconDoubleTapAction =
+      config.icon_double_tap_action || { action: "none" };
 
-    if (!this._listenersBound) {
-      this.addEventListener("click", (e) => this._handleClick(e));
-      this._listenersBound = true;
-    }
+    // Kart geneli için 3 aksiyon. Varsayılan tap = fan more-info; hold
+    // ve double-tap kapalı.
+    this.tapAction = config.tap_action || { action: "more-info" };
+    this.holdAction = config.hold_action || { action: "none" };
+    this.doubleTapAction = config.double_tap_action || { action: "none" };
 
     this.render();
   }
 
-  _handleClick(e) {
-    // Önizleme modunda (entity gerçekten hass'te yoksa) tuşların hiçbir
-    // şey yapmaması için tıklamayı sessizce yutuyoruz.
-    if (this._isPreview) {
+  // ---------------------------------------------------------------------
+  // Action handler — HA Tile card mantığıyla tap / hold / double-tap
+  // ---------------------------------------------------------------------
+  // pointerdown → hold timer başlat. Belirli süre dolarsa hold action
+  // tetiklenir. pointerup'tan önce dolmadıysa hold iptal.
+  // pointerup → didHold ise hiçbir şey; değilse: double-tap configure
+  // edilmişse 300ms iki tıklama beklemesi, edilmemişse tap'i hemen
+  // tetikle (gecikme yaşatmamak için).
+  // Mode (cycle) tuşu kendi davranışını korur, action handler'a girmez.
+  _attachActionHandler(element, getActions) {
+    if (!element || element._xapBound) return;
+    element._xapBound = true;
+
+    const HOLD_MS = 500;
+    const DOUBLE_TAP_MS = 300;
+
+    let holdTimer = null;
+    let didHold = false;
+    let pendingTap = null;
+    let lastTapTime = 0;
+
+    element.addEventListener("pointerdown", (e) => {
+      // Power/mode tuşlarına basınca kart-level handler'ın da
+      // tetiklenmesini önle.
       e.stopPropagation();
-      return;
-    }
-    const actionTarget = e.target.closest("[data-action]");
-    if (actionTarget) {
+      if (this._isPreview) return;
+      didHold = false;
+      const { hold } = getActions();
+      if (hold && hold.action && hold.action !== "none") {
+        holdTimer = setTimeout(() => {
+          didHold = true;
+          this._fireHaptic("medium");
+          this._executeAction(hold);
+        }, HOLD_MS);
+      }
+    });
+
+    const cancelHold = () => {
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+    };
+
+    element.addEventListener("pointerup", (e) => {
       e.stopPropagation();
-      const action = actionTarget.dataset.action;
-      if (action === "toggle") this._togglePower();
-      if (action === "cycle") this._cycleMode();
-      return;
-    }
-    // Karta dokunma (power/mode tuşları dışında): tap_action'ı uygula.
-    this._executeTapAction();
+      if (this._isPreview) return;
+      cancelHold();
+      if (didHold) return;
+
+      const { tap, double_tap } = getActions();
+      const hasDouble =
+        double_tap && double_tap.action && double_tap.action !== "none";
+
+      if (!hasDouble) {
+        // Double-tap yoksa tek tap'i hemen çalıştır, beklemeye gerek yok.
+        this._executeAction(tap);
+        return;
+      }
+
+      const now = Date.now();
+      if (lastTapTime && now - lastTapTime < DOUBLE_TAP_MS) {
+        if (pendingTap) {
+          clearTimeout(pendingTap);
+          pendingTap = null;
+        }
+        this._executeAction(double_tap);
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+        pendingTap = setTimeout(() => {
+          this._executeAction(tap);
+          pendingTap = null;
+          lastTapTime = 0;
+        }, DOUBLE_TAP_MS);
+      }
+    });
+
+    element.addEventListener("pointercancel", cancelHold);
+    element.addEventListener("pointerleave", cancelHold);
   }
 
-  // Yapılandırılmış tap_action'ı çalıştırır. HA'nın resmi action
-  // tiplerini destekler. "more-info" varsayılan olarak fan entity'yi açar
-  // ama config'te "entity" verilirse (örn. PM2.5 sensörü) onun more-info'su
-  // açılır — kullanıcının başlangıç isteğindeki "tıklayınca sıcaklık/nem/PM"
-  // davranışı bu sayede tek bir alandan ayarlanabilir.
-  _executeTapAction() {
-    const action = this.tapAction || { action: "more-info" };
+  // HA'nın haptic event'ini fırlat: telefon/tabletlerde dokunsal geri
+  // bildirim verir. Yoksa zararsızca yutulur.
+  _fireHaptic(type) {
+    this.dispatchEvent(
+      new CustomEvent("haptic", {
+        bubbles: true,
+        composed: true,
+        detail: type,
+      })
+    );
+  }
+
+  // Bir HA action nesnesini çalıştırır. HA'nın resmi action tiplerini
+  // destekler: none / toggle / more-info / call-service / perform-action
+  // / navigate / url. "perform-action" 2024+ sürümlerde "call-service"
+  // yerine kullanılan yeni isim — ikisi de aynı anda destekleniyor.
+  _executeAction(action) {
+    if (!action || !action.action || action.action === "none") return;
     switch (action.action) {
-      case "none":
-        return;
-      case "toggle":
-        this._hass.callService("fan", "toggle", { entity_id: this.entity });
-        return;
-      case "call-service": {
-        if (!action.service) return;
-        const [domain, service] = action.service.split(".");
-        if (!domain || !service) return;
-        this._hass.callService(domain, service, action.service_data || {});
-        return;
-      }
-      case "navigate": {
-        if (!action.navigation_path) return;
-        history.pushState(null, "", action.navigation_path);
-        const event = new Event("location-changed", {
-          bubbles: true,
-          composed: true,
-        });
-        window.dispatchEvent(event);
-        return;
-      }
-      case "url": {
-        if (!action.url_path) return;
-        window.open(action.url_path, "_blank");
+      case "toggle": {
+        const target = action.entity || this.entity;
+        const domain = target.split(".")[0];
+        if (!domain) return;
+        this._hass.callService(domain, "toggle", { entity_id: target });
         return;
       }
       case "more-info":
-      default: {
-        const targetEntity = action.entity || this.entity;
-        this._openMoreInfo(targetEntity);
+        this._openMoreInfo(action.entity || this.entity);
+        return;
+      case "call-service":
+      case "perform-action": {
+        const svc = action.perform_action || action.service;
+        if (!svc) return;
+        const [d, s] = svc.split(".");
+        if (!d || !s) return;
+        const data = action.data || action.service_data || {};
+        const target = action.target;
+        this._hass.callService(d, s, data, target);
         return;
       }
+      case "navigate":
+        if (!action.navigation_path) return;
+        history.pushState(null, "", action.navigation_path);
+        window.dispatchEvent(new Event("location-changed"));
+        return;
+      case "url":
+        if (!action.url_path) return;
+        window.open(action.url_path, "_blank");
+        return;
+    }
+  }
+
+  // Skeleton inşa edildikten sonra power ve mod tuşlarına + ha-card'ın
+  // geneline action handler'ları bağlar. Skeleton yeniden inşa edilince
+  // eski elemanlar GC'lenir, handler'ları da onlarla birlikte gider.
+  _bindActionHandlers() {
+    const els = this._els;
+    if (!els) return;
+
+    // Power butonu = icon aksiyonları.
+    this._attachActionHandler(els.power, () => ({
+      tap: this.iconTapAction,
+      hold: this.iconHoldAction,
+      double_tap: this.iconDoubleTapAction,
+    }));
+
+    // Kart geneli (ha-card) = card aksiyonları. Power ve mode tuşları
+    // kendi stopPropagation'ları ile bunu bloklar, dolayısıyla bu
+    // sadece "boş alana dokunma" için tetiklenir.
+    this._attachActionHandler(els.card, () => ({
+      tap: this.tapAction,
+      hold: this.holdAction,
+      double_tap: this.doubleTapAction,
+    }));
+
+    // Mode tuşu özel davranışını korur: cycle, ne kadar bekleyip nasıl
+    // dokunduğundan bağımsız olarak. Yine de pointerdown stopPropagation
+    // ile kart-level handler tetiklenmesin.
+    if (els.modeBtn && !els.modeBtn._xapModeBound) {
+      els.modeBtn._xapModeBound = true;
+      els.modeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      els.modeBtn.addEventListener("pointerup", (e) => {
+        e.stopPropagation();
+        if (this._isPreview) return;
+        this._cycleMode();
+      });
     }
   }
 
@@ -456,6 +565,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     this._destroyParticles();
     this._initParticles();
+    this._bindActionHandlers();
 
     this._built = true;
     this._lastGlyphKey = null;
@@ -634,6 +744,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     this._destroyParticles();
     this._initParticles();
+    this._bindActionHandlers();
 
     this._built = true;
     this._lastGlyphKey = null;
@@ -1244,10 +1355,14 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       Sensors: { tr: "Sensörler" },
       Appearance: { tr: "Görünüm" },
       Interactions: { tr: "Etkileşimler" },
+      Icon: { tr: "İkon" },
+      Card: { tr: "Kart" },
       "Content layout": { tr: "İçerik düzeni" },
       Horizontal: { tr: "Yatay" },
       Vertical: { tr: "Dikey" },
       "Tap behavior": { tr: "Dokunma davranışı" },
+      "Hold behavior": { tr: "Basılı tutma davranışı" },
+      "Double tap behavior": { tr: "Çift dokunma davranışı" },
       "PM2.5 sensor": { tr: "PM2.5 sensörü" },
       "Temperature sensor": { tr: "Sıcaklık sensörü" },
       "Humidity sensor": { tr: "Nem sensörü" },
@@ -1431,22 +1546,60 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         ],
       },
 
-      // ETKİLEŞİM paneli — tap_action. ui_action selector HA'nın action
-      // editörünü olduğu gibi (more-info / toggle / perform-action /
-      // navigate / url / assist / none) getirir, hepsi otomatik çevrilir.
+      // ETKİLEŞİM paneli — HA Tile card mantığıyla iki alt panele
+      // bölündü: "İkon" (fan ikonu/güç düğmesi) ve "Kart" (geri kalan
+      // alan). Her birinde tap / hold / double-tap için ui_action
+      // selector. Varsayılanlar (toggle/more-info/none) selector'ün
+      // kendi `default_action` parametresiyle gösteriliyor; YAML'a
+      // yazılmıyor — _valueChanged temizliyor.
       {
         type: "expandable",
         name: "",
-        title: this._t(
-          "ui.panel.lovelace.editor.card.tile.interactions",
-          "Interactions"
-        ),
+        title: this._t(null, "Interactions"),
         iconPath:
           "M11,16.5L5.5,11L7,9.5L11,13.5L17,7.5L18.5,9L11,16.5Z",
         schema: [
           {
-            name: "tap_action",
-            selector: { ui_action: {} },
+            type: "expandable",
+            name: "",
+            title: this._t(null, "Icon"),
+            iconPath:
+              "M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M15.5,8A1.5,1.5 0 0,0 14,9.5A1.5,1.5 0 0,0 15.5,11A1.5,1.5 0 0,0 17,9.5A1.5,1.5 0 0,0 15.5,8M8.5,8A1.5,1.5 0 0,0 7,9.5A1.5,1.5 0 0,0 8.5,11A1.5,1.5 0 0,0 10,9.5A1.5,1.5 0 0,0 8.5,8M12,17.5C14.33,17.5 16.31,16.04 17.11,14H6.89C7.69,16.04 9.67,17.5 12,17.5Z",
+            schema: [
+              {
+                name: "icon_tap_action",
+                selector: { ui_action: { default_action: "toggle" } },
+              },
+              {
+                name: "icon_hold_action",
+                selector: { ui_action: { default_action: "none" } },
+              },
+              {
+                name: "icon_double_tap_action",
+                selector: { ui_action: { default_action: "none" } },
+              },
+            ],
+          },
+          {
+            type: "expandable",
+            name: "",
+            title: this._t(null, "Card"),
+            iconPath:
+              "M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,5V19H5V5H19Z",
+            schema: [
+              {
+                name: "tap_action",
+                selector: { ui_action: { default_action: "more-info" } },
+              },
+              {
+                name: "hold_action",
+                selector: { ui_action: { default_action: "none" } },
+              },
+              {
+                name: "double_tap_action",
+                selector: { ui_action: { default_action: "none" } },
+              },
+            ],
           },
         ],
       },
@@ -1489,9 +1642,22 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
           "Content layout"
         );
       case "tap_action":
+      case "icon_tap_action":
         return this._t(
           "ui.panel.lovelace.editor.card.generic.tap_action",
           "Tap behavior"
+        );
+      case "hold_action":
+      case "icon_hold_action":
+        return this._t(
+          "ui.panel.lovelace.editor.card.generic.hold_action",
+          "Hold behavior"
+        );
+      case "double_tap_action":
+      case "icon_double_tap_action":
+        return this._t(
+          "ui.panel.lovelace.editor.card.generic.double_tap_action",
+          "Double tap behavior"
         );
       default:
         return schema.name || "";
@@ -1520,6 +1686,12 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     if (!data.tap_action) {
       data.tap_action = { action: "more-info" };
     }
+    if (!data.hold_action) data.hold_action = { action: "none" };
+    if (!data.double_tap_action) data.double_tap_action = { action: "none" };
+    if (!data.icon_tap_action) data.icon_tap_action = { action: "toggle" };
+    if (!data.icon_hold_action) data.icon_hold_action = { action: "none" };
+    if (!data.icon_double_tap_action)
+      data.icon_double_tap_action = { action: "none" };
     // Layout config'te tutulmasa bile (varsayılan = horizontal, YAML'da
     // gerekmiyor) ha-form kutucuğunun seçili görünmesi için burada
     // doldur. _valueChanged'da horizontal hâlâ siliniyor, böylece YAML
@@ -1555,17 +1727,36 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         incoming.humidity_entity = detected.humidity;
     }
 
-    // tap_action sadeleştirme: salt varsayılan ise YAML'a yazma.
-    if (incoming.tap_action) {
-      const ta = incoming.tap_action;
-      const isDefault =
-        (ta.action === "more-info" || !ta.action) &&
-        !ta.entity &&
-        !ta.service &&
-        !ta.navigation_path &&
-        !ta.url_path;
-      if (isDefault) delete incoming.tap_action;
-    }
+    // tap_action sadeleştirme: 6 action alanı için ayrı ayrı varsayılan
+    // ile karşılaştır. Yalnızca varsayılan-dışında bir ayar varsa YAML'a
+    // yazıyoruz; aksi halde alan kaldırılır ve config temiz kalır.
+    const isDefaultAction = (a, defaultAction) => {
+      if (!a) return true;
+      if (a.action !== defaultAction) return false;
+      // Action tipi varsayılansa ama ek parametre varsa (örn. entity,
+      // service vb.) yine de tutmamız gerek.
+      const keys = Object.keys(a).filter((k) => k !== "action");
+      for (const k of keys) {
+        const v = a[k];
+        if (v !== undefined && v !== null && v !== "" &&
+            !(typeof v === "object" && Object.keys(v).length === 0)) {
+          return false;
+        }
+      }
+      return true;
+    };
+    if (isDefaultAction(incoming.tap_action, "more-info"))
+      delete incoming.tap_action;
+    if (isDefaultAction(incoming.hold_action, "none"))
+      delete incoming.hold_action;
+    if (isDefaultAction(incoming.double_tap_action, "none"))
+      delete incoming.double_tap_action;
+    if (isDefaultAction(incoming.icon_tap_action, "toggle"))
+      delete incoming.icon_tap_action;
+    if (isDefaultAction(incoming.icon_hold_action, "none"))
+      delete incoming.icon_hold_action;
+    if (isDefaultAction(incoming.icon_double_tap_action, "none"))
+      delete incoming.icon_double_tap_action;
 
     // Boş string'leri temizle (ha-form bazı alanlarda boş string emit eder).
     for (const k of Object.keys(incoming)) {
