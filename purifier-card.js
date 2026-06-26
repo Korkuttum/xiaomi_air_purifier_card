@@ -1229,12 +1229,52 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
   }
 
   // ---------- Lokalizasyon ----------
-  // HA'nın kendi çeviri sistemini kullan. Var olan bir key için
-  // kullanıcının HA dilinde metin döner; key yoksa İngilizce fallback.
-  // Böylece kullanıcı HA'sını hangi dile alırsa editör de o dilde görünür.
-  _t(key, fallback) {
-    const v = this._hass?.localize?.(key);
-    return v && typeof v === "string" ? v : fallback;
+  // Üç katmanlı çeviri:
+  //   1. HA'nın hass.localize() — varsa kullanıcının HA dilinde döner
+  //   2. Kart-içi mini sözlük — HA'da o key yoksa kullanıcının dil
+  //      koduna göre (tr/en) bizim çevirimiz devreye girer
+  //   3. İngilizce fallback string
+  // Bu sayede HA key'inin gerçekten var olup olmadığına bel bağlamadan
+  // editör hem Türkçe hem İngilizce'de doğru görünür. Başka diller HA
+  // çevirileri varsa onlardan, yoksa İngilizce fallback gösterir.
+  _dict() {
+    // Anahtar = İngilizce fallback string. Değer = dile göre çeviri.
+    // Yeni dil eklemek istersen sadece bu tabloya yeni anahtarlar ekle.
+    return {
+      Sensors: { tr: "Sensörler" },
+      Appearance: { tr: "Görünüm" },
+      Interactions: { tr: "Etkileşimler" },
+      "Content layout": { tr: "İçerik düzeni" },
+      Horizontal: { tr: "Yatay" },
+      Vertical: { tr: "Dikey" },
+      "Tap behavior": { tr: "Dokunma davranışı" },
+      "PM2.5 sensor": { tr: "PM2.5 sensörü" },
+      "Temperature sensor": { tr: "Sıcaklık sensörü" },
+      "Humidity sensor": { tr: "Nem sensörü" },
+    };
+  }
+
+  _userLang() {
+    // hass.locale.language en güvenilir kaynak; eski sürümlerde
+    // hass.language. İlk iki harfini (örn. "tr-TR" -> "tr") al.
+    const raw =
+      this._hass?.locale?.language ||
+      this._hass?.language ||
+      "en";
+    return raw.toLowerCase().slice(0, 2);
+  }
+
+  _t(haKey, fallback) {
+    // 1) HA'nın çevirisi (gerçek key varsa)
+    const ha = haKey ? this._hass?.localize?.(haKey) : null;
+    if (ha && typeof ha === "string") return ha;
+    // 2) Kart mini sözlüğü
+    const lang = this._userLang();
+    const dict = this._dict();
+    const entry = dict[fallback];
+    if (entry && entry[lang]) return entry[lang];
+    // 3) İngilizce
+    return fallback;
   }
 
   // ---------- Cihaz/sensör tespit yardımcıları ----------
@@ -1413,23 +1453,36 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     ];
   }
 
-  // Alan etiketleri. HA'nın hazır çevirisi varsa onu kullan, yoksa
-  // İngilizce. Entity / Tap action gibi yaygın alanlar HA tarafında
-  // var; PM2.5 / Temperature / Humidity sensor gibi özel etiketler
-  // için doğrudan İngilizce fallback.
+  // Alan etiketleri. Doğrulanmış HA key'leri tercih ediliyor:
+  //  - "Entity"      → ui.components.entity.entity-picker.entity (var)
+  //  - "Temperature" → ui.card.weather.attributes.temperature (var)
+  //  - "Humidity"    → ui.card.weather.attributes.humidity (var)
+  // Geri kalanlar mini sözlükten (tr/en) ya da İngilizce fallback'ten.
   _computeLabel(schema) {
     switch (schema.name) {
       case "entity":
         return this._t(
-          "ui.panel.lovelace.editor.card.generic.entity",
+          "ui.components.entity.entity-picker.entity",
           "Entity"
         );
       case "pm25_entity":
-        return "PM2.5 sensor";
-      case "temperature_entity":
-        return "Temperature sensor";
-      case "humidity_entity":
-        return "Humidity sensor";
+        // "PM2.5" + boşluk + lokalize "sensor". Tek sözcük halinde
+        // mini sözlüğümüzde de "PM2.5 sensor" anahtarı var.
+        return this._t(null, "PM2.5 sensor");
+      case "temperature_entity": {
+        const t = this._t(
+          "ui.card.weather.attributes.temperature",
+          "Temperature"
+        );
+        return this._t(null, "Temperature sensor").replace("Temperature", t);
+      }
+      case "humidity_entity": {
+        const h = this._t(
+          "ui.card.weather.attributes.humidity",
+          "Humidity"
+        );
+        return this._t(null, "Humidity sensor").replace("Humidity", h);
+      }
       case "layout":
         return this._t(
           "ui.panel.lovelace.editor.card.tile.content_layout",
