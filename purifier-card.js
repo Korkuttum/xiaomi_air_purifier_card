@@ -1228,6 +1228,15 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     this._render();
   }
 
+  // ---------- Lokalizasyon ----------
+  // HA'nın kendi çeviri sistemini kullan. Var olan bir key için
+  // kullanıcının HA dilinde metin döner; key yoksa İngilizce fallback.
+  // Böylece kullanıcı HA'sını hangi dile alırsa editör de o dilde görünür.
+  _t(key, fallback) {
+    const v = this._hass?.localize?.(key);
+    return v && typeof v === "string" ? v : fallback;
+  }
+
   // ---------- Cihaz/sensör tespit yardımcıları ----------
 
   _getDeviceIdForEntity(entityId) {
@@ -1308,7 +1317,10 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       {
         type: "expandable",
         name: "",
-        title: "Sensörler",
+        title: this._t(
+          "ui.panel.config.devices.entities.sensors",
+          "Sensors"
+        ),
         iconPath:
           "M15,13V5A3,3 0 0,0 12,2A3,3 0 0,0 9,5V13A5,5 0 1,0 15,13M12,4A1,1 0 0,1 13,5V8H11V5A1,1 0 0,1 12,4Z",
         schema: [
@@ -1327,14 +1339,16 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         ],
       },
 
-      // GÖRÜNÜM paneli — layout, HA Tile card editöründekiyle birebir
-      // aynı kutucuk seçici (mode: "box"). HA'nın kendi tile content
-      // layout görsellerini yeniden kullanıyoruz; aydınlık/karanlık tema
-      // ve RTL otomatik destekli.
+      // GÖRÜNÜM paneli — HA Tile card editörüyle birebir aynı key'leri
+      // kullanıyoruz; "Appearance", "Content layout", "Horizontal",
+      // "Vertical" HA tarafından kullanıcının diline çevriliyor.
       {
         type: "expandable",
         name: "",
-        title: "Görünüm",
+        title: this._t(
+          "ui.panel.lovelace.editor.card.tile.appearance",
+          "Appearance"
+        ),
         iconPath:
           "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z",
         schema: [
@@ -1347,7 +1361,10 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
                 options: [
                   {
                     value: "horizontal",
-                    label: "Yatay",
+                    label: this._t(
+                      "ui.panel.lovelace.editor.card.tile.content_layout_options.horizontal",
+                      "Horizontal"
+                    ),
                     image: {
                       src: "/static/images/form/tile_content_layout_horizontal.svg",
                       src_dark:
@@ -1357,7 +1374,10 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
                   },
                   {
                     value: "vertical",
-                    label: "Dikey",
+                    label: this._t(
+                      "ui.panel.lovelace.editor.card.tile.content_layout_options.vertical",
+                      "Vertical"
+                    ),
                     image: {
                       src: "/static/images/form/tile_content_layout_vertical.svg",
                       src_dark:
@@ -1373,11 +1393,14 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
 
       // ETKİLEŞİM paneli — tap_action. ui_action selector HA'nın action
       // editörünü olduğu gibi (more-info / toggle / perform-action /
-      // navigate / url / assist / none) getirir.
+      // navigate / url / assist / none) getirir, hepsi otomatik çevrilir.
       {
         type: "expandable",
         name: "",
-        title: "Etkileşim",
+        title: this._t(
+          "ui.panel.lovelace.editor.card.tile.interactions",
+          "Interactions"
+        ),
         iconPath:
           "M11,16.5L5.5,11L7,9.5L11,13.5L17,7.5L18.5,9L11,16.5Z",
         schema: [
@@ -1390,18 +1413,36 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     ];
   }
 
-  // Şema alan isimleri Türkçe etiketlere eşlenir. ha-form bunu callback
-  // olarak ister; aksi halde alan ismini ham gösterir.
+  // Alan etiketleri. HA'nın hazır çevirisi varsa onu kullan, yoksa
+  // İngilizce. Entity / Tap action gibi yaygın alanlar HA tarafında
+  // var; PM2.5 / Temperature / Humidity sensor gibi özel etiketler
+  // için doğrudan İngilizce fallback.
   _computeLabel(schema) {
-    const labels = {
-      entity: "Fan / Hava temizleyici (gerekli)",
-      pm25_entity: "PM2.5 sensörü",
-      temperature_entity: "Sıcaklık sensörü",
-      humidity_entity: "Nem sensörü",
-      layout: "Yerleşim",
-      tap_action: "Dokunma aksiyonu",
-    };
-    return labels[schema.name] || schema.name || "";
+    switch (schema.name) {
+      case "entity":
+        return this._t(
+          "ui.panel.lovelace.editor.card.generic.entity",
+          "Entity"
+        );
+      case "pm25_entity":
+        return "PM2.5 sensor";
+      case "temperature_entity":
+        return "Temperature sensor";
+      case "humidity_entity":
+        return "Humidity sensor";
+      case "layout":
+        return this._t(
+          "ui.panel.lovelace.editor.card.tile.content_layout",
+          "Content layout"
+        );
+      case "tap_action":
+        return this._t(
+          "ui.panel.lovelace.editor.card.generic.tap_action",
+          "Tap behavior"
+        );
+      default:
+        return schema.name || "";
+    }
   }
 
   // ---------- Render ----------
