@@ -23,6 +23,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.temperatureEntity = config.temperature_entity;
     this.humidityEntity = config.humidity_entity;
 
+    // tap_action: HA standart formatı. Varsayılan: fan more-info aç.
+    // Şekil: { action: "more-info" | "toggle" | "call-service" | "navigate" | "url" | "none",
+    //          entity?: string,           // more-info için hedef entity
+    //          service?: string,          // call-service için (örn. "fan.toggle")
+    //          service_data?: object,     // call-service için
+    //          navigation_path?: string,  // navigate için
+    //          url_path?: string }        // url için
+    this.tapAction = config.tap_action || { action: "more-info" };
+
     if (!this._listenersBound) {
       this.addEventListener("click", (e) => this._handleClick(e));
       this._listenersBound = true;
@@ -46,7 +55,52 @@ class XiaomiAirPurifierCard extends HTMLElement {
       if (action === "cycle") this._cycleMode();
       return;
     }
-    this._openMoreInfo();
+    // Karta dokunma (power/mode tuşları dışında): tap_action'ı uygula.
+    this._executeTapAction();
+  }
+
+  // Yapılandırılmış tap_action'ı çalıştırır. HA'nın resmi action
+  // tiplerini destekler. "more-info" varsayılan olarak fan entity'yi açar
+  // ama config'te "entity" verilirse (örn. PM2.5 sensörü) onun more-info'su
+  // açılır — kullanıcının başlangıç isteğindeki "tıklayınca sıcaklık/nem/PM"
+  // davranışı bu sayede tek bir alandan ayarlanabilir.
+  _executeTapAction() {
+    const action = this.tapAction || { action: "more-info" };
+    switch (action.action) {
+      case "none":
+        return;
+      case "toggle":
+        this._hass.callService("fan", "toggle", { entity_id: this.entity });
+        return;
+      case "call-service": {
+        if (!action.service) return;
+        const [domain, service] = action.service.split(".");
+        if (!domain || !service) return;
+        this._hass.callService(domain, service, action.service_data || {});
+        return;
+      }
+      case "navigate": {
+        if (!action.navigation_path) return;
+        history.pushState(null, "", action.navigation_path);
+        const event = new Event("location-changed", {
+          bubbles: true,
+          composed: true,
+        });
+        window.dispatchEvent(event);
+        return;
+      }
+      case "url": {
+        if (!action.url_path) return;
+        window.open(action.url_path, "_blank");
+        return;
+      }
+      case "more-info":
+      default: {
+        const targetEntity = action.entity || this.entity;
+        this._openMoreInfo(targetEntity);
+        return;
+      }
+    }
   }
 
   // Bir sensör entity'sinden ya da (verilmemişse) fan entity attribute'larından
@@ -259,7 +313,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
           position: relative;
           z-index: 1;
         ">
-          <!-- 1. Power toggle (sabit 36x36, kart boyutundan etkilenmez) -->
           <div class="xap-power" data-action="toggle" style="
             flex-shrink: 0;
             display: flex;
@@ -281,13 +334,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></ha-icon>
           </div>
 
-          <!-- 2. PM2.5 — DEĞER (002) kolonun TAM dikey merkezine absolute
-               ile sabitlenir (kolonun yüksekliğinden / birimin
-               varlığından bağımsız olarak hep ortada kalır). Birim
-               (µg/m³) value'nun hemen altına, yine absolute ile sabit ve
-               KÜÇÜK bir offsetle yerleştirilir — ha-card overflow:hidden
-               olduğu için (sürükleme/scroll oku çıkmasın diye) offset
-               kartın gerçek yüksekliğine kesin sığacak kadar dar tutuldu. -->
           <div class="xap-pm-col" style="
             position: relative;
             display: flex;
@@ -321,10 +367,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "></span>
           </div>
 
-          <!-- 3. Temperature + humidity — kolonun kendisi de yatayda
-               ortalanan bir flex bölgesi içinde. İkon ve değer sütunları
-               sabit genişlikte olduğu için iki satır da tam alt alta
-               hizalanır (ikon ikonun altına, sayı sayının altına). -->
           <div class="xap-th-col" style="
             display: flex;
             flex-direction: column;
@@ -371,8 +413,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
             </div>
           </div>
 
-          <!-- 4. Mod tuşu: tek tuş (sabit 36x36), üzerinde mevcut modun
-               sembolü, basınca bir sonraki moda geçer. -->
           <div class="xap-mode-btn" data-action="cycle" style="
             flex-shrink: 0;
             display: flex;
@@ -414,8 +454,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
       particlesCanvas: this.querySelector(".xap-particles"),
     };
 
-    // innerHTML yeniden yazılmadan önce eski canvas/RAF/observer varsa
-    // (örn. entity geçici olarak kaybolup tekrar geldiğinde) temizle.
     this._destroyParticles();
     this._initParticles();
 
@@ -613,35 +651,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const els = this._els;
     const scale = d.scale;
 
-    // --- SABİT boyutlar: kart küçülüp büyüse de hiçbiri değişmez. ---
-    // Sadece elemanlar arasındaki BOŞLUKLAR (gap) kart büyüdükçe açılır.
-    // Güç düğmesi / mod tuşu çerçevesi zaten HTML'de 36x36 sabit verildi.
-    const FIXED_GLYPH_ICON_SIZE = 24; // mod tuşundaki ay/kalp ikonu içi (sabit)
+    const FIXED_GLYPH_ICON_SIZE = 24;
     const FIXED_PM_FONT = 27;
     const FIXED_PM_UNIT_FONT = 9;
     const FIXED_TH_FONT = 12;
     const FIXED_TH_ICON = 13;
-    const FIXED_TH_VALUE_WIDTH = 34; // değer sütunu sabit genişlik (hizalama için)
+    const FIXED_TH_VALUE_WIDTH = 34;
 
-    // --- Tek ölçeklenen şey: boşluklar. Kart büyüdükçe elemanlar arası
-    //     mesafe orantılı açılır, elemanların kendisi büyümez. ---
     const gap = Math.round(8 * scale);
 
     els.row.style.gap = `${gap}px`;
 
-    // PM göstergesini ve sıcaklık/nem bloğunu, güç düğmesine göre biraz
-    // sağa kaydırıyoruz (küçük ekranlarda güç düğmesiyle PM değerinin
-    // üst üste binmesini engellemek için). transform kullanıyoruz çünkü
-    // margin, pmCol flex:1 olduğundan flexbox tarafından dengelenip
-    // (sağ kenar sabit kalıp) görsel olarak hiçbir şeyi kaydırmıyordu.
-    // transform ise layout hesaplamasına girmediği için gerçekten kaydırır
-    // ve mode/power tuşlarının konumunu etkilemez.
     const rightShift = Math.round(6 * scale);
     els.pmValue.style.left = `calc(50% + ${rightShift}px)`;
     els.pmUnit.style.left = `calc(50% + ${rightShift}px)`;
     els.thCol.style.transform = `translateX(${rightShift}px)`;
 
-    // Güç düğmesi — çerçeve 36x36 sabit, ikon 24x24 sabit.
     els.power.style.background =
       d.state === "on"
         ? "rgba(76, 175, 80, 0.12)"
@@ -650,17 +675,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.fanIcon.style.color =
       d.state === "on" ? "#4CAF50" : "var(--secondary-text-color)";
 
-    // Fan dönüş hızı, cihazın gerçek percentage'ına göre. Home Assistant'ın
-    // kendi fan kartındaki dönüş hissine yaklaşmak için süreler kısaltıldı
-    // (daha hızlı dönüyor): min 0.45s (yüksek hız) - max 1.6s (düşük hız).
     if (d.state === "on") {
       const pct =
         typeof d.attrs.percentage === "number" ? d.attrs.percentage : 50;
       const duration = 1.6 - (Math.max(0, Math.min(100, pct)) / 100) * 1.15;
       const durationStr = `${Math.max(0.45, duration).toFixed(2)}s`;
-      // Süre değiştiğinde bile animasyonu KOPARMADAN güncelliyoruz: class
-      // zaten "spinning" ise sadece animation-duration'ı değiştiriyoruz,
-      // class'ı kaldırıp eklemiyoruz (bu da takılmaya sebep olurdu).
       if (els.fanIcon.style.animationDuration !== durationStr) {
         els.fanIcon.style.animationDuration = durationStr;
       }
@@ -672,24 +691,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.fanIcon.style.animationDuration = "";
     }
 
-    // PM2.5 — DEĞER kendi başına kolonun dikey merkezine sabit (absolute +
-    // translateY(-50%)), birim ise kendi sabit yerinde (alt kısımda) kalır.
-    // Font boyutu sabit.
     els.pmValue.style.fontSize = `${FIXED_PM_FONT}px`;
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
     els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
     els.pmUnit.textContent = d.pm25Unit;
 
-    // Sıcaklık + nem — ikon ve değer için sabit genişlikler veriyoruz ki
-    // iki satır (sıcaklık / nem) tam alt alta hizalansın: ikon ikonun
-    // altına, sayı sayının altına gelsin. Font/ikon boyutu sabit, sadece
-    // satır içi ve satırlar arası gap scale ile büyür.
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
       row.style.fontSize = `${FIXED_TH_FONT}px`;
-      // İkon ile değer arasındaki boşluk: öncekinin yarısı (1px yerine 1px
-      // tabanlı scale, eskisi 2*scale idi).
       row.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     });
     [els.tempIcon, els.humIcon].forEach((icon) => {
@@ -699,22 +709,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
     });
     els.tempValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
     els.humValue.style.width = `${FIXED_TH_VALUE_WIDTH}px`;
-    // Sıcaklık birimi: entity zaten "°C" gönderiyorsa olduğu gibi, sadece
-    // "°" ya da boş geliyorsa "°C" tamamlanarak gösterilir; entity Fahrenheit
-    // ise (°F) onu da olduğu gibi korur.
     let tempUnitDisplay = d.temperatureUnit;
     if (tempUnitDisplay === "°" || !tempUnitDisplay) tempUnitDisplay = "°C";
     els.tempValue.textContent = `${d.temperature}${tempUnitDisplay}`;
     els.humValue.textContent = `${d.humidity}${d.humidityUnit === "%" ? "%" : ""}`;
 
-    // Mod tuşu — çerçeve 36x36 sabit, içerik (glyph) 24x24 sabit.
     els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
 
     this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
 
-    // Toz parçacıkları: fan çalışırken kartın genelinden fan ikonuna doğru
-    // emiliyormuş gibi görünen küçük noktacıklar. Yoğunluk PM2.5 değerine
-    // göre artar/azalır; fan kapalıyken parçacıklar durur.
     this._updateParticleSystem(d);
   }
 
@@ -784,12 +787,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // ---------------------------------------------------------------------
   // Toz parçacıkları (Xiaomi uygulamasındakine benzer "emiliyor" efekti)
   // ---------------------------------------------------------------------
-  // Bir canvas üzerinde, kartın çeşitli noktalarından doğan küçük
-  // noktacıklar fan ikonunun merkezine doğru hızlanarak hareket eder,
-  // yaklaştıkça küçülüp solar ve yeniden doğar. Parçacık sayısı PM2.5
-  // değerine göre belirlenir (hava ne kadar kirliyse o kadar çok parçacık).
-  // Bu katman mevcut DOM yapısına dokunmaz; ha-card'ın arkasına eklenen
-  // ayrı bir <canvas> üzerinde, requestAnimationFrame ile çalışır.
   _initParticles() {
     const canvas = this._els.particlesCanvas;
     if (!canvas) return;
@@ -826,7 +823,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     canvas.height = Math.round(h * dpr);
     this._particleCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Fan ikonunun canvas içindeki (kart-göreli) merkez koordinatı.
     const cardRect = card.getBoundingClientRect();
     const fanRect = this._els.power.getBoundingClientRect();
     this._fanCenter = {
@@ -836,9 +832,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._canvasSize = { w, h };
   }
 
-  // PM2.5 değerine göre hedef parçacık sayısını ve fan durumuna göre
-  // sistemin aktif olup olmadığını günceller. Gerçek parçacık ekleme/
-  // çıkarma _particleFrame içinde kademeli yapılır (ani sıçrama olmasın).
   _updateParticleSystem(d) {
     if (!this._particleCtx) return;
 
@@ -849,20 +842,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!this._particlesActive || Number.isNaN(num)) {
       target = 0;
     } else {
-      // PM2.5 ~0 -> 10 parçacık (hafif bir akış her zaman görünsün),
-      // PM2.5 >= 150 -> 42 parçacık (yoğun kirlilik hissi).
       target = Math.round(10 + (Math.min(Math.max(num, 0), 150) / 150) * 32);
     }
     this._particleTargetCount = target;
 
-    // Fan hızına göre parçacıkların emilme hızı da değişsin (HA fan
-    // animasyonuyla aynı percentage mantığını kullanıyoruz).
     const pct =
       typeof d.attrs?.percentage === "number" ? d.attrs.percentage : 50;
     this._particleSpeedFactor = 0.6 + (Math.max(0, Math.min(100, pct)) / 100) * 1.1;
 
-    // Parçacıkların rengi PM2.5 kalite rengiyle (002 değerinin rengiyle)
-    // aynı olsun — hava ne kadar kirliyse parçacıklar da o renkte akar.
     this._particleColor = d.pmColor || "#9e9e9e";
   }
 
@@ -870,9 +857,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const { w, h } = this._canvasSize || { w: 0, h: 0 };
     if (!w || !h || !this._fanCenter) return null;
 
-    // Kartın kenarları boyunca (dikdörtgenin çevresinde) rastgele bir
-    // başlangıç noktası seç, ki parçacıklar her yönden fan'a doğru
-    // akıyormuş gibi görünsün.
     const edge = Math.floor(Math.random() * 4);
     let x, y;
     const margin = 2;
@@ -896,10 +880,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
       startX: x,
       startY: y,
       progress: 0,
-      // Parçacıklar arasında doğal görünmesi için hız/boyut/şeffaflık
-      // hafifçe rastgele. Renk artık PM kalite rengiyle eşleştiği için
-      // (yeşil/sarı/turuncu/kırmızı/mor) belirgin görünmesi adına boyut
-      // ve opaklık biraz büyütüldü.
       speed: 0.006 + Math.random() * 0.01,
       size: 1.1 + Math.random() * 1.8,
       baseAlpha: 0.45 + Math.random() * 0.45,
@@ -917,9 +897,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const particles = this._particles;
     const target = this._particleTargetCount || 0;
 
-    // Hedef sayıya doğru kademeli yaklaş (her frame'de en fazla 1 parçacık
-    // ekle/çıkar) — PM değeri aniden değiştiğinde parçacıklar "patlamaz",
-    // yumuşakça çoğalır/azalır.
     if (particles.length < target) {
       const p = this._spawnParticle();
       if (p) particles.push(p);
@@ -939,19 +916,16 @@ class XiaomiAirPurifierCard extends HTMLElement {
       p.progress += p.speed * speedFactor;
 
       if (p.progress >= 1) {
-        // Fan merkezine ulaştı: yeniden doğur (yeni kenar noktası).
         const fresh = this._spawnParticle();
         if (fresh) particles[i] = fresh;
         continue;
       }
 
-      // Ease-in: başta yavaş, fan'a yaklaştıkça hızlanarak "emilme" hissi.
       const t = p.progress;
       const eased = t * t;
       p.x = p.startX + (fan.x - p.startX) * eased;
       p.y = p.startY + (fan.y - p.startY) * eased;
 
-      // Merkeze yaklaştıkça küçülüp solar.
       const fade = 1 - t;
       const radius = Math.max(0.3, p.size * fade);
       const alpha = p.baseAlpha * fade;
@@ -989,19 +963,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return "#9C27B0";
   }
 
-  // Mod tuşunun ortasındaki sembolü günceller. Auto -> "A", Sleep -> hilal,
-  // Favorite -> kalp, "Manual" gibi seviyeli bir adımda dalgalı çizgiler.
-  // Gereksiz DOM thrash'ini önlemek için aynı glyph zaten çizilmişse
-  // (key değişmemişse) yeniden yazmaz, sadece boyutunu günceller.
-  // Ay/kalp ikonu sabit 24px; harf ve dalga glyph'leri önceki (36px
-  // çerçeveye göre ayarlanmış) sabit boyutlarında bırakıldı — kart boyutu
-  // değişse de hiçbiri büyümez/küçülmez.
   _renderModeGlyphInto(container, step, moonHeartIconSize) {
     if (!step) return;
 
-    const WAVE_WIDTH = 18; // sabit, 36px referansa göre ayarlı (36*0.5)
-    const WAVE_HEIGHT = 8; // sabit (36*0.21, yuvarlanmış)
-    const LETTER_FONT_SIZE = 22; // sabit (36*0.6, yuvarlanmış)
+    const WAVE_WIDTH = 18;
+    const WAVE_HEIGHT = 8;
+    const LETTER_FONT_SIZE = 22;
 
     const level = step.level || 0;
     const preset = (step.presetMode || "").toString().toLowerCase();
@@ -1025,7 +992,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
       this._lastGlyphKey = key;
     }
 
-    // Boyutu her render'da güncelle (skeleton yeniden yazılmasa bile).
     const glyphIcon = container.querySelector(".xap-glyph-icon");
     if (glyphIcon) {
       glyphIcon.style.width = `${moonHeartIconSize}px`;
@@ -1038,11 +1004,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
   }
 
-  // Döngü tuşunun geçeceği adımları üretir. Varsayılan olarak entity'nin
-  // kendi preset_modes sırasını kullanır; kart yapılandırmasında mode_order
-  // verilmişse onu kullanır. "Manual" gibi bir preset, entity'nin kendi
-  // speed_list attribute'u varsa doğrudan o isimlerle ve o sayıda alt adıma
-  // bölünür. speed_list yoksa percentage_step'ten hesaplanır.
   _getModeSteps(attrs) {
     const order =
       this.config?.mode_order && this.config.mode_order.length
@@ -1115,8 +1076,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return steps;
   }
 
-  // Mevcut durumun (preset_mode + percentage) yukarıdaki adımlardan
-  // hangisine karşılık geldiğini bulur.
   _getCurrentStepIndex(steps, attrs) {
     const currentPreset = (attrs.preset_mode || "").toString().toLowerCase();
     const currentPercentage = attrs.percentage;
@@ -1183,16 +1142,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
       });
     }
 
-    // Optimistic UI: servis çağrısının state'e yansıması birkaç yüz ms
-    // sürebileceğinden, glyph'i hemen yeni adıma göre güncelle.
     this.render();
   }
 
-  _openMoreInfo() {
+  _openMoreInfo(entityId) {
     const event = new CustomEvent("hass-more-info", {
       bubbles: true,
       composed: true,
-      detail: { entityId: this.entity },
+      detail: { entityId: entityId || this.entity },
     });
     this.dispatchEvent(event);
   }
@@ -1205,9 +1162,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   connectedCallback() {
-    // Kart DOM'a eklendiğinde / boyutu değişebileceğinden (örn. grid
-    // sütun sayısı sonradan değiştirildiğinde) genişliği izleyip ölçeği
-    // güncelliyoruz.
     if (!this._resizeObserver && typeof ResizeObserver !== "undefined") {
       this._resizeObserver = new ResizeObserver(() => {
         if (this._built) this.render();
@@ -1228,9 +1182,6 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return 2;
   }
 
-  // Sections (grid) görünümünde kart eklendiğinde varsayılan boyut.
-  // Kullanıcı kart yapılandırmasında kendi grid_options'ını verirse o öncelikli
-  // olur; bu sadece HA'nın önerdiği başlangıç değeridir.
   getGridOptions() {
     if ((this.config?.layout || "horizontal") === "vertical") {
       return {
@@ -1249,9 +1200,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 }
 
-// ---------------------------------------------------------------------
-// Görsel yapılandırma editörü (Kart Ekle > Düzenle ekranında açılır)
-// ---------------------------------------------------------------------
+// =====================================================================
+// Görsel yapılandırma editörü
+// =====================================================================
+// İki sekme: "İçerik" (entity'ler, otomatik tespit, layout) ve
+// "Etkileşim" (kart tıklanınca ne olacak). Home Assistant'ın kendi
+// kart editörleriyle aynı çerçeveyi takip ediyor.
 class XiaomiAirPurifierCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
@@ -1260,114 +1214,14 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._updatePickers();
+    this._updateFields();
   }
 
   connectedCallback() {
     this._render();
   }
 
-  _render() {
-    if (this._rendered) {
-      this._updatePickers();
-      return;
-    }
-    this.innerHTML = `
-      <div style="display:flex; flex-direction:column; gap:16px; padding:8px 2px;">
-        <ha-entity-picker id="entity_picker" label="Fan / Air Purifier (required)"></ha-entity-picker>
-        <ha-entity-picker id="pm25_picker" label="PM2.5 Sensor (optional)"></ha-entity-picker>
-        <ha-entity-picker id="temperature_picker" label="Temperature Sensor (optional)"></ha-entity-picker>
-        <ha-entity-picker id="humidity_picker" label="Humidity Sensor (optional)"></ha-entity-picker>
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <label style="font-size:13px; color: var(--primary-text-color);">Layout</label>
-          <select id="layout_select" style="
-            padding:10px 12px;
-            border-radius:6px;
-            border:1px solid var(--divider-color, #ccc);
-            background: var(--card-background-color);
-            color: var(--primary-text-color);
-            font-size:14px;
-          ">
-            <option value="horizontal">Horizontal — wide, 1 row (default)</option>
-            <option value="vertical">Vertical — narrow, multi-row</option>
-          </select>
-        </div>
-      </div>
-    `;
-    this._rendered = true;
-
-    this._entityPicker = this.querySelector("#entity_picker");
-    this._pm25Picker = this.querySelector("#pm25_picker");
-    this._temperaturePicker = this.querySelector("#temperature_picker");
-    this._humidityPicker = this.querySelector("#humidity_picker");
-    this._layoutSelect = this.querySelector("#layout_select");
-
-    this._entityPicker.includeDomains = ["fan"];
-    this._pm25Picker.includeDomains = ["sensor"];
-    this._temperaturePicker.includeDomains = ["sensor"];
-    this._humidityPicker.includeDomains = ["sensor"];
-
-    this._entityPicker.addEventListener("value-changed", (e) =>
-      this._valueChanged("entity", e)
-    );
-    this._pm25Picker.addEventListener("value-changed", (e) =>
-      this._valueChanged("pm25_entity", e)
-    );
-    this._temperaturePicker.addEventListener("value-changed", (e) =>
-      this._valueChanged("temperature_entity", e)
-    );
-    this._humidityPicker.addEventListener("value-changed", (e) =>
-      this._valueChanged("humidity_entity", e)
-    );
-    this._layoutSelect.addEventListener("change", (e) => {
-      e.stopPropagation();
-      const value = e.target.value;
-      const newConfig = { ...this._config };
-      if (value && value !== "horizontal") {
-        newConfig.layout = value;
-      } else {
-        delete newConfig.layout;
-      }
-      this._config = newConfig;
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: newConfig },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    });
-
-    this._updatePickers();
-  }
-
-  _updatePickers() {
-    if (!this._rendered || !this._hass) return;
-    [this._entityPicker, this._pm25Picker, this._temperaturePicker, this._humidityPicker].forEach(
-      (p) => {
-        if (p) p.hass = this._hass;
-      }
-    );
-    if (this._entityPicker) this._entityPicker.value = this._config?.entity || "";
-    if (this._pm25Picker) this._pm25Picker.value = this._config?.pm25_entity || "";
-    if (this._temperaturePicker)
-      this._temperaturePicker.value = this._config?.temperature_entity || "";
-    if (this._humidityPicker)
-      this._humidityPicker.value = this._config?.humidity_entity || "";
-    if (this._layoutSelect) {
-      this._layoutSelect.value = this._config?.layout || "horizontal";
-    }
-  }
-
-  _valueChanged(key, ev) {
-    ev.stopPropagation();
-    const value = ev.detail.value;
-    const newConfig = { ...this._config };
-    if (value) {
-      newConfig[key] = value;
-    } else {
-      delete newConfig[key];
-    }
+  _emitConfig(newConfig) {
     this._config = newConfig;
     this.dispatchEvent(
       new CustomEvent("config-changed", {
@@ -1377,11 +1231,591 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       })
     );
   }
+
+  // Fan entity'sinin device_id'sini HA entity_registry'sinden bul.
+  // hass.entities en güvenilir kaynak (modern HA). Eski sürümler için
+  // hass.entityRegistry'ye de bakıyoruz.
+  _getDeviceIdForEntity(entityId) {
+    if (!this._hass || !entityId) return null;
+    const reg = this._hass.entities || this._hass.entityRegistry;
+    if (!reg) return null;
+    const entry = reg[entityId];
+    return entry?.device_id || null;
+  }
+
+  // Verilen device_id'ye bağlı tüm entity_id'leri döndür.
+  _getEntitiesForDevice(deviceId) {
+    if (!this._hass || !deviceId) return [];
+    const reg = this._hass.entities || this._hass.entityRegistry;
+    if (!reg) return [];
+    return Object.values(reg)
+      .filter((e) => e.device_id === deviceId)
+      .map((e) => e.entity_id);
+  }
+
+  // Bir entity'nin "tipi"ni belirle: pm25 / temperature / humidity.
+  // Önce device_class'a, sonra unit_of_measurement'a, son çare olarak
+  // entity_id'deki anahtar kelimelere bakar.
+  _classifySensor(entityId) {
+    if (!entityId) return null;
+    const state = this._hass?.states?.[entityId];
+    const attrs = state?.attributes || {};
+    const deviceClass = (attrs.device_class || "").toString().toLowerCase();
+    const unit = (attrs.unit_of_measurement || "").toString().toLowerCase();
+    const id = entityId.toLowerCase();
+
+    if (deviceClass === "pm25" || deviceClass === "pm2.5") return "pm25";
+    if (deviceClass === "temperature") return "temperature";
+    if (deviceClass === "humidity") return "humidity";
+
+    if (unit.includes("µg") || unit.includes("ug/m")) return "pm25";
+    if (unit === "°c" || unit === "°f") return "temperature";
+    if (unit === "%" && (id.includes("humid") || id.includes("nem")))
+      return "humidity";
+
+    if (id.includes("pm2") || id.includes("pm_2")) return "pm25";
+    if (id.includes("temperature") || id.includes("temp") || id.includes("sicaklik"))
+      return "temperature";
+    if (id.includes("humidity") || id.includes("nem")) return "humidity";
+
+    return null;
+  }
+
+  // Fan entity'sinin bağlı olduğu cihazdaki PM2.5/sıcaklık/nem sensörlerini
+  // bulup döndür. Birden fazla aday varsa ilkini al. Bulunamayanlar null.
+  _detectSensorsFromFan(fanEntityId) {
+    const deviceId = this._getDeviceIdForEntity(fanEntityId);
+    if (!deviceId) return { pm25: null, temperature: null, humidity: null };
+    const siblings = this._getEntitiesForDevice(deviceId);
+
+    const result = { pm25: null, temperature: null, humidity: null };
+    for (const eid of siblings) {
+      if (eid === fanEntityId) continue;
+      if (!eid.startsWith("sensor.")) continue;
+      const kind = this._classifySensor(eid);
+      if (kind && !result[kind]) {
+        result[kind] = eid;
+      }
+    }
+    return result;
+  }
+
+  // Fan picker değiştiğinde: yeni entity'yi kaydet ve eğer kullanıcı
+  // PM/sıcaklık/nem alanlarını henüz manuel olarak doldurmamışsa, aynı
+  // cihazdaki sensörleri otomatik bul ve doldur. Kullanıcı bir alanı
+  // zaten elle ayarlamışsa ONA DOKUNMAYIZ — bu, "farklı bir sensör seçmek
+  // istersem de seçebileyim" isteğini karşılıyor.
+  _onFanChanged(newFanEntity) {
+    const next = { ...this._config };
+    if (newFanEntity) {
+      next.entity = newFanEntity;
+    } else {
+      delete next.entity;
+    }
+
+    if (newFanEntity) {
+      const detected = this._detectSensorsFromFan(newFanEntity);
+      if (!next.pm25_entity && detected.pm25) next.pm25_entity = detected.pm25;
+      if (!next.temperature_entity && detected.temperature)
+        next.temperature_entity = detected.temperature;
+      if (!next.humidity_entity && detected.humidity)
+        next.humidity_entity = detected.humidity;
+    }
+
+    this._emitConfig(next);
+    this._updateFields();
+  }
+
+  // "Yeniden tespit et" butonu: kullanıcı manuel doldurmuş olsa bile
+  // sıfırdan cihazın sensörlerini bulup üzerine yazar.
+  _redetectSensors() {
+    const fanEntity = this._config?.entity;
+    if (!fanEntity) return;
+    const detected = this._detectSensorsFromFan(fanEntity);
+    const next = { ...this._config };
+    if (detected.pm25) next.pm25_entity = detected.pm25;
+    if (detected.temperature) next.temperature_entity = detected.temperature;
+    if (detected.humidity) next.humidity_entity = detected.humidity;
+    this._emitConfig(next);
+    this._updateFields();
+  }
+
+  _setSimpleField(key, value) {
+    const next = { ...this._config };
+    if (value) {
+      next[key] = value;
+    } else {
+      delete next[key];
+    }
+    this._emitConfig(next);
+  }
+
+  _setLayout(value) {
+    const next = { ...this._config };
+    if (value && value !== "horizontal") {
+      next.layout = value;
+    } else {
+      delete next.layout;
+    }
+    this._emitConfig(next);
+  }
+
+  // tap_action nesnesinin tek bir alanını günceller. Action tipi
+  // değiştiğinde, eski tipten kalan ilgisiz alanları temizliyoruz ki
+  // YAML çıktısında çöp olmasın.
+  _updateTapAction(patch) {
+    const current = this._config?.tap_action || { action: "more-info" };
+    const merged = { ...current, ...patch };
+
+    if (patch.action) {
+      // Yeni action'a göre yalnızca onun alanlarını tut.
+      const cleaned = { action: patch.action };
+      if (patch.action === "more-info" && (current.entity || patch.entity)) {
+        cleaned.entity = patch.entity ?? current.entity;
+      }
+      if (patch.action === "call-service") {
+        cleaned.service = current.service || patch.service || "";
+        if (current.service_data || patch.service_data) {
+          cleaned.service_data = patch.service_data ?? current.service_data;
+        }
+      }
+      if (patch.action === "navigate") {
+        cleaned.navigation_path =
+          patch.navigation_path ?? current.navigation_path ?? "";
+      }
+      if (patch.action === "url") {
+        cleaned.url_path = patch.url_path ?? current.url_path ?? "";
+      }
+      Object.assign(merged, {});
+      // merged'i temizle, sadece cleaned kalsın
+      for (const k of Object.keys(merged)) delete merged[k];
+      Object.assign(merged, cleaned);
+    }
+
+    const next = { ...this._config, tap_action: merged };
+    this._emitConfig(next);
+    // Action tipi değiştiyse koşullu alanları yeniden çizmek için
+    // etkileşim bölümünü güncelle.
+    this._renderInteractionFields();
+    this._updateFields();
+  }
+
+  _render() {
+    if (this._rendered) {
+      this._updateFields();
+      return;
+    }
+    this.innerHTML = `
+      <div class="xap-editor" style="display:flex; flex-direction:column; gap:16px; padding:8px 2px;">
+        <!-- Sekme başlıkları (HA editör tarzı) -->
+        <div class="xap-tabs" style="
+          display:flex;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        ">
+          <button type="button" data-tab="content" class="xap-tab" style="
+            flex:1;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--primary-text-color);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          ">İçerik</button>
+          <button type="button" data-tab="interactions" class="xap-tab" style="
+            flex:1;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--secondary-text-color);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          ">Etkileşim</button>
+        </div>
+
+        <!-- İçerik sekmesi -->
+        <div class="xap-panel" data-panel="content" style="display:flex; flex-direction:column; gap:16px;">
+          <ha-entity-picker id="entity_picker" label="Fan / Air Purifier (gerekli)"></ha-entity-picker>
+
+          <div id="device_hint" style="
+            display:none;
+            background: var(--secondary-background-color, #f5f5f5);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--secondary-text-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          ">
+            <span id="device_hint_text">Sensörler cihazdan otomatik bulunacak.</span>
+            <button type="button" id="redetect_btn" style="
+              background: var(--primary-color);
+              color: var(--text-primary-color, #fff);
+              border: none;
+              padding: 6px 12px;
+              border-radius: 6px;
+              font-size: 13px;
+              cursor: pointer;
+              white-space: nowrap;
+            ">Yeniden bul</button>
+          </div>
+
+          <ha-entity-picker id="pm25_picker" label="PM2.5 sensörü (opsiyonel)"></ha-entity-picker>
+          <ha-entity-picker id="temperature_picker" label="Sıcaklık sensörü (opsiyonel)"></ha-entity-picker>
+          <ha-entity-picker id="humidity_picker" label="Nem sensörü (opsiyonel)"></ha-entity-picker>
+
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <label style="font-size:13px; color: var(--primary-text-color);">Yerleşim</label>
+            <select id="layout_select" style="
+              padding:10px 12px;
+              border-radius:6px;
+              border:1px solid var(--divider-color, #ccc);
+              background: var(--card-background-color);
+              color: var(--primary-text-color);
+              font-size:14px;
+            ">
+              <option value="horizontal">Yatay — geniş, tek satır (varsayılan)</option>
+              <option value="vertical">Dikey — dar, çok satır</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Etkileşim sekmesi (başlangıçta gizli) -->
+        <div class="xap-panel" data-panel="interactions" style="display:none; flex-direction:column; gap:16px;">
+          <div style="
+            background: var(--secondary-background-color, #f5f5f5);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--secondary-text-color);
+          ">
+            Karta dokunulduğunda ne yapılacağını belirler. Güç ve mod tuşları
+            kendi davranışlarını korur — bu ayar yalnızca kartın boş alanına
+            dokunmayı etkiler.
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <label style="font-size:13px; color: var(--primary-text-color);">Dokunma aksiyonu</label>
+            <select id="tap_action_type" style="
+              padding:10px 12px;
+              border-radius:6px;
+              border:1px solid var(--divider-color, #ccc);
+              background: var(--card-background-color);
+              color: var(--primary-text-color);
+              font-size:14px;
+            ">
+              <option value="more-info">Bilgi penceresi (more-info)</option>
+              <option value="toggle">Fanı aç/kapat</option>
+              <option value="call-service">Servis çağır</option>
+              <option value="navigate">Sayfaya git</option>
+              <option value="url">URL aç</option>
+              <option value="none">Hiçbir şey yapma</option>
+            </select>
+          </div>
+
+          <div id="tap_action_fields" style="display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+      </div>
+    `;
+    this._rendered = true;
+
+    this._tabs = this.querySelectorAll(".xap-tab");
+    this._panels = this.querySelectorAll(".xap-panel");
+    this._tabs.forEach((tab) => {
+      tab.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._switchTab(tab.dataset.tab);
+      });
+    });
+
+    this._entityPicker = this.querySelector("#entity_picker");
+    this._pm25Picker = this.querySelector("#pm25_picker");
+    this._temperaturePicker = this.querySelector("#temperature_picker");
+    this._humidityPicker = this.querySelector("#humidity_picker");
+    this._layoutSelect = this.querySelector("#layout_select");
+    this._deviceHint = this.querySelector("#device_hint");
+    this._deviceHintText = this.querySelector("#device_hint_text");
+    this._redetectBtn = this.querySelector("#redetect_btn");
+    this._tapActionType = this.querySelector("#tap_action_type");
+    this._tapActionFields = this.querySelector("#tap_action_fields");
+
+    this._entityPicker.includeDomains = ["fan"];
+    this._pm25Picker.includeDomains = ["sensor"];
+    this._temperaturePicker.includeDomains = ["sensor"];
+    this._humidityPicker.includeDomains = ["sensor"];
+
+    this._entityPicker.addEventListener("value-changed", (e) => {
+      e.stopPropagation();
+      this._onFanChanged(e.detail.value);
+    });
+    this._pm25Picker.addEventListener("value-changed", (e) => {
+      e.stopPropagation();
+      this._setSimpleField("pm25_entity", e.detail.value);
+    });
+    this._temperaturePicker.addEventListener("value-changed", (e) => {
+      e.stopPropagation();
+      this._setSimpleField("temperature_entity", e.detail.value);
+    });
+    this._humidityPicker.addEventListener("value-changed", (e) => {
+      e.stopPropagation();
+      this._setSimpleField("humidity_entity", e.detail.value);
+    });
+    this._layoutSelect.addEventListener("change", (e) => {
+      e.stopPropagation();
+      this._setLayout(e.target.value);
+    });
+    this._redetectBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._redetectSensors();
+    });
+    this._tapActionType.addEventListener("change", (e) => {
+      e.stopPropagation();
+      this._updateTapAction({ action: e.target.value });
+    });
+
+    this._renderInteractionFields();
+    this._switchTab("content");
+    this._updateFields();
+  }
+
+  _switchTab(tabName) {
+    this._currentTab = tabName;
+    this._tabs.forEach((tab) => {
+      const active = tab.dataset.tab === tabName;
+      tab.style.borderBottomColor = active
+        ? "var(--primary-color)"
+        : "transparent";
+      tab.style.color = active
+        ? "var(--primary-color)"
+        : "var(--secondary-text-color)";
+    });
+    this._panels.forEach((panel) => {
+      panel.style.display = panel.dataset.panel === tabName ? "flex" : "none";
+    });
+  }
+
+  // Aksiyon tipine göre koşullu alanları (entity / service / path / url)
+  // göster. Action tipi değiştiğinde yeniden çağrılır.
+  _renderInteractionFields() {
+    if (!this._tapActionFields) return;
+    const tap = this._config?.tap_action || { action: "more-info" };
+    const type = tap.action || "more-info";
+
+    let html = "";
+    if (type === "more-info") {
+      html = `
+        <ha-entity-picker id="tap_entity_picker"
+          label="Hedef entity (boş bırakılırsa fan açılır)"></ha-entity-picker>
+        <div style="font-size:12px; color: var(--secondary-text-color); margin-top:-4px;">
+          Örn. sıcaklık sensörünü seçerseniz, karta dokununca onun bilgi
+          penceresi açılır.
+        </div>
+      `;
+    } else if (type === "call-service") {
+      html = `
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:13px; color: var(--primary-text-color);">Servis (domain.service)</label>
+          <input id="tap_service" type="text" placeholder="örn. fan.set_preset_mode" style="
+            padding:10px 12px;
+            border-radius:6px;
+            border:1px solid var(--divider-color, #ccc);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            font-size:14px;
+          "/>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:13px; color: var(--primary-text-color);">Servis verisi (JSON, opsiyonel)</label>
+          <textarea id="tap_service_data" rows="3" placeholder='örn. {"entity_id": "fan.x", "preset_mode": "Sleep"}' style="
+            padding:10px 12px;
+            border-radius:6px;
+            border:1px solid var(--divider-color, #ccc);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            font-size:13px;
+            font-family: var(--code-font-family, monospace);
+            resize: vertical;
+          "></textarea>
+        </div>
+      `;
+    } else if (type === "navigate") {
+      html = `
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:13px; color: var(--primary-text-color);">Yol</label>
+          <input id="tap_navigation_path" type="text" placeholder="örn. /lovelace/0" style="
+            padding:10px 12px;
+            border-radius:6px;
+            border:1px solid var(--divider-color, #ccc);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            font-size:14px;
+          "/>
+        </div>
+      `;
+    } else if (type === "url") {
+      html = `
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:13px; color: var(--primary-text-color);">URL</label>
+          <input id="tap_url_path" type="text" placeholder="https://..." style="
+            padding:10px 12px;
+            border-radius:6px;
+            border:1px solid var(--divider-color, #ccc);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            font-size:14px;
+          "/>
+        </div>
+      `;
+    }
+
+    this._tapActionFields.innerHTML = html;
+
+    // Yeni eklenen alanlara event'ler bağla.
+    const tapEntityPicker = this.querySelector("#tap_entity_picker");
+    if (tapEntityPicker) {
+      tapEntityPicker.hass = this._hass;
+      // Bu picker'da domain kısıtı yok — kullanıcı herhangi bir entity
+      // (sıcaklık, nem, pm, başka bir cihaz vb.) seçebilsin.
+      tapEntityPicker.value = tap.entity || "";
+      tapEntityPicker.addEventListener("value-changed", (e) => {
+        e.stopPropagation();
+        this._updateTapAction({ entity: e.detail.value || undefined });
+      });
+    }
+    const tapService = this.querySelector("#tap_service");
+    if (tapService) {
+      tapService.value = tap.service || "";
+      tapService.addEventListener("input", (e) => {
+        this._updateTapActionDebounced({ service: e.target.value });
+      });
+    }
+    const tapServiceData = this.querySelector("#tap_service_data");
+    if (tapServiceData) {
+      tapServiceData.value = tap.service_data
+        ? JSON.stringify(tap.service_data, null, 2)
+        : "";
+      tapServiceData.addEventListener("input", (e) => {
+        const raw = e.target.value.trim();
+        if (!raw) {
+          this._updateTapActionDebounced({ service_data: undefined });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          this._updateTapActionDebounced({ service_data: parsed });
+        } catch (err) {
+          // Geçersiz JSON'da config'i kirletmiyoruz; kullanıcı yazmaya
+          // devam ederken sessizce bekliyoruz.
+        }
+      });
+    }
+    const tapNav = this.querySelector("#tap_navigation_path");
+    if (tapNav) {
+      tapNav.value = tap.navigation_path || "";
+      tapNav.addEventListener("input", (e) => {
+        this._updateTapActionDebounced({ navigation_path: e.target.value });
+      });
+    }
+    const tapUrl = this.querySelector("#tap_url_path");
+    if (tapUrl) {
+      tapUrl.value = tap.url_path || "";
+      tapUrl.addEventListener("input", (e) => {
+        this._updateTapActionDebounced({ url_path: e.target.value });
+      });
+    }
+  }
+
+  // Metin alanı her tuş vuruşunda config emit etmek istemiyoruz; küçük
+  // bir gecikmeyle birleştiriyoruz. Bu, _updateTapAction'ı action tipi
+  // değiştirmeden çağırır (alan temizleme mantığını tetiklemez).
+  _updateTapActionDebounced(patch) {
+    clearTimeout(this._tapDebounce);
+    this._tapDebounce = setTimeout(() => {
+      const current = this._config?.tap_action || { action: "more-info" };
+      const merged = { ...current };
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined || v === "" || v === null) {
+          delete merged[k];
+        } else {
+          merged[k] = v;
+        }
+      }
+      const next = { ...this._config, tap_action: merged };
+      this._emitConfig(next);
+    }, 250);
+  }
+
+  _updateFields() {
+    if (!this._rendered || !this._hass) return;
+
+    [
+      this._entityPicker,
+      this._pm25Picker,
+      this._temperaturePicker,
+      this._humidityPicker,
+    ].forEach((p) => {
+      if (p) p.hass = this._hass;
+    });
+
+    if (this._entityPicker)
+      this._entityPicker.value = this._config?.entity || "";
+    if (this._pm25Picker)
+      this._pm25Picker.value = this._config?.pm25_entity || "";
+    if (this._temperaturePicker)
+      this._temperaturePicker.value = this._config?.temperature_entity || "";
+    if (this._humidityPicker)
+      this._humidityPicker.value = this._config?.humidity_entity || "";
+    if (this._layoutSelect)
+      this._layoutSelect.value = this._config?.layout || "horizontal";
+
+    // Cihaz ipucu paneli
+    if (this._deviceHint) {
+      const fanId = this._config?.entity;
+      const deviceId = fanId ? this._getDeviceIdForEntity(fanId) : null;
+      if (deviceId) {
+        const siblings = this._getEntitiesForDevice(deviceId);
+        const sensorCount = siblings.filter((e) =>
+          e.startsWith("sensor.")
+        ).length;
+        this._deviceHint.style.display = "flex";
+        this._deviceHintText.textContent = `Bu cihaza bağlı ${sensorCount} sensör bulundu. Boş alanlar otomatik dolduruldu; istediğinizi elle değiştirebilirsiniz.`;
+      } else if (fanId) {
+        this._deviceHint.style.display = "flex";
+        this._deviceHintText.textContent =
+          "Bu fan bir cihaza kayıtlı görünmüyor; sensörleri elle seçmeniz gerekiyor.";
+      } else {
+        this._deviceHint.style.display = "none";
+      }
+    }
+
+    // Etkileşim sekmesi
+    if (this._tapActionType) {
+      this._tapActionType.value =
+        this._config?.tap_action?.action || "more-info";
+    }
+    const tapEntityPicker = this.querySelector("#tap_entity_picker");
+    if (tapEntityPicker) {
+      tapEntityPicker.hass = this._hass;
+      tapEntityPicker.value = this._config?.tap_action?.entity || "";
+    }
+  }
 }
 
 // Kartları tanımla
 customElements.define("xiaomi-air-purifier-card", XiaomiAirPurifierCard);
-customElements.define("xiaomi-air-purifier-card-editor", XiaomiAirPurifierCardEditor);
+customElements.define(
+  "xiaomi-air-purifier-card-editor",
+  XiaomiAirPurifierCardEditor
+);
 
 // HACS ve Lovelace kart seçici (Add Card / Önizleme) için kaydet
 window.customCards = window.customCards || [];
