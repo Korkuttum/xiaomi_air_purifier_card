@@ -278,6 +278,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return found;
   }
 
+  // Kartın kendi arayüz metni için minimal dil algılama. Editördeki
+  // 3 katmanlı _t() sistemiyle aynı mantık, ama kart HA'nın localize()
+  // fonksiyonuna erişemeyeceği için (bu bir string kartın kendi ürettiği
+  // metni, HA'nın bir çeviri key'i değil) burada basitçe kullanıcının
+  // dil koduna (tr/en) göre seçim yapıyoruz. HACS üzerinden herkese açık
+  // bir kart olduğu için varsayılan İngilizce, sadece Türkçe kullanıcıya
+  // Türkçe gösteriyoruz.
+  _offlineBadgeText() {
+    const raw =
+      this._hass?.locale?.language || this._hass?.language || "en";
+    const lang = raw.toLowerCase().slice(0, 2);
+    return lang === "tr" ? "Çevrimdışı" : "Offline";
+  }
+
   // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
   // sağlanırsa true döner:
   //  1) Attribute ADI ".error" ile bitiyor ve değeri boş değil — Xiaomi
@@ -1014,7 +1028,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // çalışır ki cache'lenmiş "on" state'e rağmen spin'i geçersiz kılsın.
     if (d.offline) {
       els.offlineBadge.style.display = "flex";
-      els.offlineText.textContent = "Çevrimdışı";
+      els.offlineText.textContent = this._offlineBadgeText();
       els.card.style.filter = "grayscale(0.8) opacity(0.6)";
       els.fanIcon.classList.remove("spinning");
       els.fanIcon.style.animationDuration = "";
@@ -1089,7 +1103,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // Offline durumu: rozet göster, kartı soluklaştır, animasyonu durdur.
     if (d.offline) {
       els.offlineBadge.style.display = "flex";
-      els.offlineText.textContent = "Çevrimdışı";
+      els.offlineText.textContent = this._offlineBadgeText();
       els.card.style.filter = "grayscale(0.8) opacity(0.6)";
       els.fanIcon.classList.remove("spinning");
       els.fanIcon.style.animationDuration = "";
