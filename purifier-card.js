@@ -23,12 +23,13 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.temperatureEntity = config.temperature_entity;
     this.humidityEntity = config.humidity_entity;
 
-    // Bağlantı/offline algılama için opsiyonel entity. Verilirse (örn.
-    // RPM sensörü) bu entity'nin unavailable/unknown olması "kesin
-    // offline" sayılır. Verilmezse ana fan entity'sinin last_updated
-    // zaman damgasına bakarak "bayat veri" (stale) fallback'i devreye
-    // girer.
-    this.offlineEntity = config.offline_entity;
+    // Bağlantı/offline algılama. Normalde kullanıcının hiçbir şey
+    // yapmasına gerek yok: Xiaomi Miot entegrasyonu her cihaz için
+    // otomatik olarak bir "button.<cihaz>_info" diagnostik entity'si
+    // oluşturur; kart bunu aynı cihazdaki entity'ler arasından kendisi
+    // bulur (bkz. _getOfflineEntityId). offline_entity sadece farklı bir
+    // entity kullanmak isteyenler için manuel override amaçlıdır.
+    this.offlineEntity = config.offline_entity || null;
     this.staleMinutes = config.stale_minutes || 15;
 
     // İkon (fan ikonu / güç düğmesi) için 3 aksiyon. Varsayılanlar HA
@@ -240,18 +241,87 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return { value: fallbackValue, unit: fallbackUnit };
   }
 
+  // Aynı cihazdaki (fan entity'siyle aynı device_id'ye sahip) Xiaomi
+  // Miot diagnostik "Info" butonunu otomatik bulur. Bu entity her zaman
+  // "button.<slug>_info" formatındadır ve Xiaomi Miot entegrasyonuyla
+  // kurulan her cihazda mevcuttur — kullanıcının elle bir entity
+  // seçmesine gerek bırakmaz. Sonuç, fan entity'si değişmediği sürece
+  // cache'lenir ki her render'da tüm entity registry'si taranmasın.
+  _getOfflineEntityId() {
+    // Kullanıcı elle offline_entity verdiyse (farklı bir entegrasyon/
+    // entity kullanmak istiyorsa) onu kullan, otomatik tespiti atla.
+    if (this.offlineEntity) return this.offlineEntity;
+
+    if (this._autoOfflineEntityFor === this.entity) {
+      return this._autoOfflineEntity;
+    }
+    this._autoOfflineEntityFor = this.entity;
+    this._autoOfflineEntity = null;
+
+    const reg = this._hass?.entities || this._hass?.entityRegistry;
+    if (!reg) return null;
+    const fanReg = reg[this.entity];
+    const deviceId = fanReg?.device_id;
+    if (!deviceId) return null;
+
+    let found = null;
+    for (const eid of Object.keys(reg)) {
+      if (!eid.startsWith("button.")) continue;
+      if (reg[eid]?.device_id !== deviceId) continue;
+      if (eid.endsWith("_info")) {
+        found = eid;
+        break;
+      }
+      if (!found) found = eid; // fallback: aynı cihazdaki herhangi bir button
+    }
+    this._autoOfflineEntity = found;
+    return found;
+  }
+
+  // Bir entity'nin TÜM attribute değerlerini tarar; herhangi birinin
+  // metin içeriğinde "timeout" geçiyorsa true döner. Xiaomi Miot
+  // entegrasyonunda cihaz gerçekten yanıt vermediğinde birçok
+  // attribute'a "<kod> Device operation timeout" gibi bir hata metni
+  // otomatik ekleniyor — attribute adı ne olursa olsun (moto_speed_rpm,
+  // favorite_speed, reboot_cause, vb.) kullanıcının hangi attribute'u
+  // hedefleyeceğini bilmesine gerek kalmadan bunu genel olarak
+  // yakalıyoruz.
+  _attrsContainTimeout(attrs) {
+    if (!attrs) return false;
+    for (const key of Object.keys(attrs)) {
+      const val = attrs[key];
+      if (typeof val === "string" && val.toLowerCase().includes("timeout")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Cihazın gerçekten bağlı olup olmadığını belirler.
-  // Öncelik: offline_entity (örn. RPM sensörü) unavailable/unknown ise
-  // kesin offline sayılır — çünkü cihaz cloud/local bağlantıyı
-  // kaybettiğinde ham DP tabanlı sensörler genelde bu duruma düşer.
-  // offline_entity verilmemişse, ana fan entity'sinin son güncellenme
-  // zamanına bakarak "bayat veri" (stale) uyarısı üretir; API son
-  // bilinen durumu (örn. "on") döndürmeye devam etse bile, veri belirli
-  // bir süredir tazelenmemişse offline kabul edilir.
+  // Öncelik: aynı cihazdaki Xiaomi Miot "Info" butonu (otomatik tespit
+  // edilir, bkz. _getOfflineEntityId) ya da elle verilmiş offline_entity.
+  // Bu entity'nin TÜM attribute'ları taranır: herhangi birinde "timeout"
+  // geçiyorsa cihaz kesin offline sayılır — bu, ana entity'nin
+  // "available" attribute'u hep true kalsa ve RPM gibi değerler son
+  // bilinen (örn. 0) değerde sabit kalsa bile çalışır. Timeout izi yoksa
+  // entity'nin state'i unavailable/unknown mı diye bakılır (klasik
+  // durum). Uygun bir entity hiç bulunamazsa, ana fan entity'sinin son
+  // güncellenme zamanına bakarak "bayat veri" (stale) fallback'i
+  // devreye girer.
   _getOfflineState(fanState) {
-    if (this.offlineEntity && !this._isPreview) {
-      const st = this._hass?.states[this.offlineEntity];
-      if (!st || st.state === "unavailable" || st.state === "unknown") {
+    const offlineEntityId = this._isPreview ? null : this._getOfflineEntityId();
+
+    if (offlineEntityId) {
+      const st = this._hass?.states[offlineEntityId];
+      if (!st) {
+        return { offline: true, reason: "disconnected" };
+      }
+
+      if (this._attrsContainTimeout(st.attributes)) {
+        return { offline: true, reason: "timeout" };
+      }
+
+      if (st.state === "unavailable" || st.state === "unknown") {
         return { offline: true, reason: "disconnected" };
       }
       return { offline: false, reason: null };
@@ -1489,7 +1559,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       "PM2.5 sensor": { tr: "PM2.5 sensörü" },
       "Temperature sensor": { tr: "Sıcaklık sensörü" },
       "Humidity sensor": { tr: "Nem sensörü" },
-      "Connectivity sensor": { tr: "Bağlantı sensörü (RPM vb.)" },
+      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)" },
     };
   }
 
@@ -1618,7 +1688,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
           },
           {
             name: "offline_entity",
-            selector: { entity: { domain: ["sensor", "binary_sensor"] } },
+            selector: { entity: {} },
           },
         ],
       },
