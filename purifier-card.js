@@ -278,19 +278,32 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return found;
   }
 
-  // Bir entity'nin TÜM attribute değerlerini tarar; herhangi birinin
-  // metin içeriğinde "timeout" geçiyorsa true döner. Xiaomi Miot
-  // entegrasyonunda cihaz gerçekten yanıt vermediğinde birçok
-  // attribute'a "<kod> Device operation timeout" gibi bir hata metni
-  // otomatik ekleniyor — attribute adı ne olursa olsun (moto_speed_rpm,
-  // favorite_speed, reboot_cause, vb.) kullanıcının hangi attribute'u
-  // hedefleyeceğini bilmesine gerek kalmadan bunu genel olarak
-  // yakalıyoruz.
+  // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
+  // sağlanırsa true döner:
+  //  1) Attribute ADI ".error" ile bitiyor ve değeri boş değil — Xiaomi
+  //     Miot entegrasyonu cihaz yanıt vermediğinde her ilgili property
+  //     için "<prop>.error" adında bir attribute ekliyor. Bu, hata
+  //     mesajının içeriğinden tamamen bağımsız, en güvenilir sinyal.
+  //  2) Attribute DEĞERİ "timeout" veya "offline" kelimesini içeriyor —
+  //     hata koduna göre mesaj metni değişebiliyor (örn. "Device
+  //     operation timeout" ya da "Device offline"); bu ikinci kontrol
+  //     farklı adlandırma kullanan entegrasyonlar için yedek görevi
+  //     görür.
   _attrsContainTimeout(attrs) {
     if (!attrs) return false;
     for (const key of Object.keys(attrs)) {
       const val = attrs[key];
-      if (typeof val === "string" && val.toLowerCase().includes("timeout")) {
+      if (
+        key.endsWith(".error") &&
+        val !== undefined &&
+        val !== null &&
+        val !== ""
+      ) {
+        return true;
+      }
+      if (typeof val !== "string") continue;
+      const lower = val.toLowerCase();
+      if (lower.includes("timeout") || lower.includes("offline")) {
         return true;
       }
     }
