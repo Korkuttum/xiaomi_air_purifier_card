@@ -443,22 +443,31 @@ class XiaomiAirPurifierCard extends HTMLElement {
       ">
         <div class="xap-offline-badge" style="
           position: absolute;
-          top: 4px;
-          right: 4px;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
           display: none;
+          flex-direction: column;
           align-items: center;
-          gap: 3px;
-          padding: 2px 6px;
-          border-radius: 8px;
-          background: rgba(244, 67, 54, 0.15);
-          color: #F44336;
-          font-size: 10px;
-          font-weight: 600;
-          z-index: 3;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          background: rgba(0, 0, 0, 0.72);
+          backdrop-filter: blur(2px);
+          color: #FFFFFF;
+          z-index: 5;
           pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         ">
-          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 12px; display:flex;"></ha-icon>
-          <span class="xap-offline-text"></span>
+          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 22px; display:flex; color:#FF5252;"></ha-icon>
+          <span class="xap-offline-text" style="
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          "></span>
         </div>
         <canvas class="xap-particles" style="
           position: absolute;
@@ -654,22 +663,31 @@ class XiaomiAirPurifierCard extends HTMLElement {
       ">
         <div class="xap-offline-badge" style="
           position: absolute;
-          top: 4px;
-          right: 4px;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
           display: none;
+          flex-direction: column;
           align-items: center;
-          gap: 3px;
-          padding: 2px 6px;
-          border-radius: 8px;
-          background: rgba(244, 67, 54, 0.15);
-          color: #F44336;
-          font-size: 10px;
-          font-weight: 600;
-          z-index: 3;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          background: rgba(0, 0, 0, 0.72);
+          backdrop-filter: blur(2px);
+          color: #FFFFFF;
+          z-index: 5;
           pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         ">
-          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 12px; display:flex;"></ha-icon>
-          <span class="xap-offline-text"></span>
+          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 22px; display:flex; color:#FF5252;"></ha-icon>
+          <span class="xap-offline-text" style="
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          "></span>
         </div>
         <canvas class="xap-particles" style="
           position: absolute;
