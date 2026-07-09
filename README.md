@@ -13,6 +13,7 @@ A minimalist, single-row air purifier / fan card for Home Assistant. It packs po
 - **Animated fan icon**: Spins while the device is on, with rotation speed tied to the actual fan percentage
 - **Dust particle effect**: Small particles flow from the edges of the card toward the fan icon while running, with density scaling to the current PM2.5 level
 - **One-button mode cycling**: Tap a single button to step through modes (Auto, Sleep, Manual levels, Favorite, etc.)
+- **Automatic offline detection**: Detects when the physical device has actually lost connectivity, even if the integration keeps reporting stale "last known" data (fan still shown spinning, sensors still showing old values). For Xiaomi Miot integration devices this works out of the box with zero configuration — see [Offline detection](#offline-detection) below
 - **Flexible data sources**: PM2.5 / temperature / humidity can be read either from the fan entity's own attributes or from separate sensor entities
 - **Grid/Sections friendly**: In Home Assistant's sections view, all spacing scales proportionally when you change the column count
 - **Visual config editor**: No-YAML setup via entity pickers in the Add Card → Edit screen
@@ -46,6 +47,8 @@ mode_order:                             # optional — mode cycle order
   - Sleep
   - Manual
   - Favorite
+offline_entity: button.device_info      # optional — manual override, see below
+stale_minutes: 15                       # optional — see below
 ```
 
 | Option | Required | Description |
@@ -55,8 +58,20 @@ mode_order:                             # optional — mode cycle order
 | `temperature_entity` | — | If omitted, the `temperature` / `temp` attribute is read from the fan entity instead |
 | `humidity_entity` | — | If omitted, the `humidity` attribute is read from the fan entity instead |
 | `mode_order` | — | The list of `preset_modes` the mode button cycles through, in order. If omitted, the entity's own order is used. A mode named `Manual` is automatically split into sub-levels (Manual 1, Manual 2, ...) if the entity exposes a `speed_list` or `percentage_step` attribute |
+| `offline_entity` | — | Manually override the entity used for connectivity detection. Only needed if auto-detection (see below) doesn't apply to your integration |
+| `stale_minutes` | — | Fallback staleness threshold in minutes, default `15`. Only used when no connectivity entity is found or configured — see below |
 
 > If you don't want to pick separate PM2.5/temperature/humidity sensors, you can leave those fields empty — some integrations already expose this data directly on the fan entity's attributes.
+
+### Offline detection
+
+Some integrations keep reporting the last known state from the cloud even after the physical device has lost connectivity — the card would otherwise keep the fan spinning and show old sensor values indefinitely.
+
+For devices set up through the **Xiaomi Miot** integration, this works automatically: every Xiaomi Miot device has a paired diagnostic `button.*_info` entity, and the card locates it on its own (matched via the same device), then watches its attributes. If any attribute name ends in `.error`, or any attribute value contains `timeout` or `offline` (covering the different Xiaomi error codes, e.g. `Device operation timeout`, `Device offline`), the card marks the device as offline — regardless of what the fan entity's own `state` still says.
+
+When offline, the card shows a centered "Offline" / "Çevrimdışı" badge (localized to the Home Assistant UI language), dims the card, and stops the fan animation.
+
+If you're not using Xiaomi Miot, or auto-detection picks the wrong entity, set `offline_entity` manually to any entity that reliably goes `unavailable`/`unknown` when the device disconnects. If no connectivity entity is available at all, the card falls back to comparing the fan entity's `last_updated` timestamp against `stale_minutes` (default 15 minutes).
 
 ### Configuring via the visual editor
 
@@ -64,6 +79,7 @@ If you'd rather not write YAML, click **Edit** (pencil icon) on the card after a
 
 - Select the fan / air purifier entity
 - (Optional) Select PM2.5, temperature, and humidity sensors
+- (Optional) Select a connectivity entity to override offline auto-detection (usually not needed — see [Offline detection](#offline-detection))
 - (Optional) Enter the mode cycle order as a comma-separated list (e.g. `Auto, Sleep, Manual, Favorite`)
 
 ## License
