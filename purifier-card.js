@@ -23,6 +23,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.temperatureEntity = config.temperature_entity;
     this.humidityEntity = config.humidity_entity;
 
+    // Bağlantı/offline algılama. Normalde kullanıcının hiçbir şey
+    // yapmasına gerek yok: Xiaomi Miot entegrasyonu her cihaz için
+    // otomatik olarak bir "button.<cihaz>_info" diagnostik entity'si
+    // oluşturur; kart bunu aynı cihazdaki entity'ler arasından kendisi
+    // bulur (bkz. _getOfflineEntityId). offline_entity sadece farklı bir
+    // entity kullanmak isteyenler için manuel override amaçlıdır.
+    this.offlineEntity = config.offline_entity || null;
+    this.staleMinutes = config.stale_minutes || 15;
+
     // İkon (fan ikonu / güç düğmesi) için 3 aksiyon. Varsayılanlar HA
     // Tile card'la aynı tarzda: ikona dokun → cihazı aç/kapat; hold ve
     // double-tap kapalı. Kullanıcı her birini ui_action editöründen
@@ -232,6 +241,129 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return { value: fallbackValue, unit: fallbackUnit };
   }
 
+  // Aynı cihazdaki (fan entity'siyle aynı device_id'ye sahip) Xiaomi
+  // Miot diagnostik "Info" butonunu otomatik bulur. Bu entity her zaman
+  // "button.<slug>_info" formatındadır ve Xiaomi Miot entegrasyonuyla
+  // kurulan her cihazda mevcuttur — kullanıcının elle bir entity
+  // seçmesine gerek bırakmaz. Sonuç, fan entity'si değişmediği sürece
+  // cache'lenir ki her render'da tüm entity registry'si taranmasın.
+  _getOfflineEntityId() {
+    // Kullanıcı elle offline_entity verdiyse (farklı bir entegrasyon/
+    // entity kullanmak istiyorsa) onu kullan, otomatik tespiti atla.
+    if (this.offlineEntity) return this.offlineEntity;
+
+    if (this._autoOfflineEntityFor === this.entity) {
+      return this._autoOfflineEntity;
+    }
+    this._autoOfflineEntityFor = this.entity;
+    this._autoOfflineEntity = null;
+
+    const reg = this._hass?.entities || this._hass?.entityRegistry;
+    if (!reg) return null;
+    const fanReg = reg[this.entity];
+    const deviceId = fanReg?.device_id;
+    if (!deviceId) return null;
+
+    let found = null;
+    for (const eid of Object.keys(reg)) {
+      if (!eid.startsWith("button.")) continue;
+      if (reg[eid]?.device_id !== deviceId) continue;
+      if (eid.endsWith("_info")) {
+        found = eid;
+        break;
+      }
+      if (!found) found = eid; // fallback: aynı cihazdaki herhangi bir button
+    }
+    this._autoOfflineEntity = found;
+    return found;
+  }
+
+  // Kartın kendi arayüz metni için minimal dil algılama. Editördeki
+  // 3 katmanlı _t() sistemiyle aynı mantık, ama kart HA'nın localize()
+  // fonksiyonuna erişemeyeceği için (bu bir string kartın kendi ürettiği
+  // metni, HA'nın bir çeviri key'i değil) burada basitçe kullanıcının
+  // dil koduna (tr/en) göre seçim yapıyoruz. HACS üzerinden herkese açık
+  // bir kart olduğu için varsayılan İngilizce, sadece Türkçe kullanıcıya
+  // Türkçe gösteriyoruz.
+  _offlineBadgeText() {
+    const raw =
+      this._hass?.locale?.language || this._hass?.language || "en";
+    const lang = raw.toLowerCase().slice(0, 2);
+    return lang === "tr" ? "Çevrimdışı" : "Offline";
+  }
+
+  // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
+  // sağlanırsa true döner:
+  //  1) Attribute ADI ".error" ile bitiyor ve değeri boş değil — Xiaomi
+  //     Miot entegrasyonu cihaz yanıt vermediğinde her ilgili property
+  //     için "<prop>.error" adında bir attribute ekliyor. Bu, hata
+  //     mesajının içeriğinden tamamen bağımsız, en güvenilir sinyal.
+  //  2) Attribute DEĞERİ "timeout" veya "offline" kelimesini içeriyor —
+  //     hata koduna göre mesaj metni değişebiliyor (örn. "Device
+  //     operation timeout" ya da "Device offline"); bu ikinci kontrol
+  //     farklı adlandırma kullanan entegrasyonlar için yedek görevi
+  //     görür.
+  _attrsContainTimeout(attrs) {
+    if (!attrs) return false;
+    for (const key of Object.keys(attrs)) {
+      const val = attrs[key];
+      if (
+        key.endsWith(".error") &&
+        val !== undefined &&
+        val !== null &&
+        val !== ""
+      ) {
+        return true;
+      }
+      if (typeof val !== "string") continue;
+      const lower = val.toLowerCase();
+      if (lower.includes("timeout") || lower.includes("offline")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Cihazın gerçekten bağlı olup olmadığını belirler.
+  // Öncelik: aynı cihazdaki Xiaomi Miot "Info" butonu (otomatik tespit
+  // edilir, bkz. _getOfflineEntityId) ya da elle verilmiş offline_entity.
+  // Bu entity'nin TÜM attribute'ları taranır: herhangi birinde "timeout"
+  // geçiyorsa cihaz kesin offline sayılır — bu, ana entity'nin
+  // "available" attribute'u hep true kalsa ve RPM gibi değerler son
+  // bilinen (örn. 0) değerde sabit kalsa bile çalışır. Timeout izi yoksa
+  // entity'nin state'i unavailable/unknown mı diye bakılır (klasik
+  // durum). Uygun bir entity hiç bulunamazsa, ana fan entity'sinin son
+  // güncellenme zamanına bakarak "bayat veri" (stale) fallback'i
+  // devreye girer.
+  _getOfflineState(fanState) {
+    const offlineEntityId = this._isPreview ? null : this._getOfflineEntityId();
+
+    if (offlineEntityId) {
+      const st = this._hass?.states[offlineEntityId];
+      if (!st) {
+        return { offline: true, reason: "disconnected" };
+      }
+
+      if (this._attrsContainTimeout(st.attributes)) {
+        return { offline: true, reason: "timeout" };
+      }
+
+      if (st.state === "unavailable" || st.state === "unknown") {
+        return { offline: true, reason: "disconnected" };
+      }
+      return { offline: false, reason: null };
+    }
+
+    if (!this._isPreview && fanState?.last_updated) {
+      const lastUpdated = new Date(fanState.last_updated).getTime();
+      const ageMinutes = (Date.now() - lastUpdated) / 60000;
+      if (ageMinutes > this.staleMinutes) {
+        return { offline: true, reason: "stale" };
+      }
+    }
+    return { offline: false, reason: null };
+  }
+
   // PM2.5 değerini cihazın kendi ekranındaki gibi 3 haneli, sıfır dolgulu
   // formatta gösterir (5 -> "005", 15 -> "015", 112 -> "112").
   _formatPM(value) {
@@ -345,6 +477,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
         : { presetMode: attrs.preset_mode || attrs.mode || "auto" };
 
     const scale = this._getScale();
+    const offlineStatus = this._getOfflineState(fanState);
 
     // İlk render'da tüm DOM iskeletini bir kere kuruyoruz. Sonraki her
     // render çağrısında (hass her güncellendiğinde, saniyede birkaç kez
@@ -368,6 +501,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       humidityUnit: humidityData.unit,
       activeStep,
       scale,
+      offline: offlineStatus.offline,
     });
   }
 
@@ -404,6 +538,34 @@ class XiaomiAirPurifierCard extends HTMLElement {
         flex-direction: column;
         position: relative;
       ">
+        <div class="xap-offline-badge" style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          display: none;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          background: rgba(0, 0, 0, 0.72);
+          backdrop-filter: blur(2px);
+          color: #FFFFFF;
+          z-index: 5;
+          pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        ">
+          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 22px; display:flex; color:#FF5252;"></ha-icon>
+          <span class="xap-offline-text" style="
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          "></span>
+        </div>
         <canvas class="xap-particles" style="
           position: absolute;
           top: 0;
@@ -561,6 +723,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
       modeGlyph: this.querySelector(".xap-mode-glyph"),
       row: this.querySelector(".xap-row"),
       particlesCanvas: this.querySelector(".xap-particles"),
+      offlineBadge: this.querySelector(".xap-offline-badge"),
+      offlineText: this.querySelector(".xap-offline-text"),
     };
 
     this._destroyParticles();
@@ -594,6 +758,34 @@ class XiaomiAirPurifierCard extends HTMLElement {
         flex-direction: column;
         position: relative;
       ">
+        <div class="xap-offline-badge" style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          display: none;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          background: rgba(0, 0, 0, 0.72);
+          backdrop-filter: blur(2px);
+          color: #FFFFFF;
+          z-index: 5;
+          pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        ">
+          <ha-icon icon="mdi:wifi-off" style="--mdc-icon-size: 22px; display:flex; color:#FF5252;"></ha-icon>
+          <span class="xap-offline-text" style="
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          "></span>
+        </div>
         <canvas class="xap-particles" style="
           position: absolute;
           top: 0;
@@ -740,6 +932,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
       modeGlyph: this.querySelector(".xap-mode-glyph"),
       row: this.querySelector(".xap-row"),
       particlesCanvas: this.querySelector(".xap-particles"),
+      offlineBadge: this.querySelector(".xap-offline-badge"),
+      offlineText: this.querySelector(".xap-offline-text"),
     };
 
     this._destroyParticles();
@@ -829,6 +1023,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
 
+    // Offline durumu: rozet göster, kartı soluklaştır, animasyonu
+    // (varsa) durdur. Bu blok animasyon açma/kapama bloğundan SONRA
+    // çalışır ki cache'lenmiş "on" state'e rağmen spin'i geçersiz kılsın.
+    if (d.offline) {
+      els.offlineBadge.style.display = "flex";
+      els.offlineText.textContent = this._offlineBadgeText();
+      els.card.style.filter = "grayscale(0.8) opacity(0.6)";
+      els.fanIcon.classList.remove("spinning");
+      els.fanIcon.style.animationDuration = "";
+    } else {
+      els.offlineBadge.style.display = "none";
+      els.card.style.filter = "";
+    }
+
     this._updateParticleSystem(d);
   }
 
@@ -892,6 +1100,18 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.modeBtn.style.background = "rgba(var(--rgb-secondary-text-color), 0.06)";
     this._renderModeGlyphInto(els.modeGlyph, d.activeStep, FIXED_GLYPH_ICON_SIZE);
 
+    // Offline durumu: rozet göster, kartı soluklaştır, animasyonu durdur.
+    if (d.offline) {
+      els.offlineBadge.style.display = "flex";
+      els.offlineText.textContent = this._offlineBadgeText();
+      els.card.style.filter = "grayscale(0.8) opacity(0.6)";
+      els.fanIcon.classList.remove("spinning");
+      els.fanIcon.style.animationDuration = "";
+    } else {
+      els.offlineBadge.style.display = "none";
+      els.card.style.filter = "";
+    }
+
     this._updateParticleSystem(d);
   }
 
@@ -946,7 +1166,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
   _updateParticleSystem(d) {
     if (!this._particleCtx) return;
 
-    this._particlesActive = d.state === "on";
+    this._particlesActive = d.state === "on" && !d.offline;
 
     const num = Number(d.pm25);
     let target;
@@ -1366,6 +1586,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       "PM2.5 sensor": { tr: "PM2.5 sensörü" },
       "Temperature sensor": { tr: "Sıcaklık sensörü" },
       "Humidity sensor": { tr: "Nem sensörü" },
+      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)" },
     };
   }
 
@@ -1467,8 +1688,9 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         selector: { entity: { domain: ["fan"] } },
       },
 
-      // SENSÖRLER paneli — fan'in PM2.5 / sıcaklık / nem yardımcı sensörleri.
-      // Fan seçildiğinde otomatik tespit edilip boş alanlara yazılırlar.
+      // SENSÖRLER paneli — fan'in PM2.5 / sıcaklık / nem yardımcı sensörleri
+      // ve opsiyonel bağlantı/offline sensörü (örn. RPM). Fan seçildiğinde
+      // pm25/temp/humidity otomatik tespit edilip boş alanlara yazılır.
       {
         type: "expandable",
         name: "",
@@ -1490,6 +1712,10 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
           {
             name: "humidity_entity",
             selector: { entity: { domain: ["sensor"] } },
+          },
+          {
+            name: "offline_entity",
+            selector: { entity: {} },
           },
         ],
       },
@@ -1636,6 +1862,8 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
         );
         return this._t(null, "Humidity sensor").replace("Humidity", h);
       }
+      case "offline_entity":
+        return this._t(null, "Connectivity sensor");
       case "layout":
         return this._t(
           "ui.panel.lovelace.editor.card.tile.content_layout",
