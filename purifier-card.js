@@ -1665,10 +1665,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const panel = document.createElement("div");
     panel.style.cssText =
       "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; scrollbar-width:thin; scrollbar-color:rgba(var(--rgb-secondary-text-color, 155,155,155), 0.4) transparent; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
-    if (!document.getElementById("xap-pop-style3")) {
+    if (!document.getElementById("xap-pop-style4")) {
       const st = document.createElement("style");
-      st.id = "xap-pop-style3";
+      st.id = "xap-pop-style4";
       st.textContent =
+        "@keyframes xap-fade{from{opacity:0}to{opacity:1}}" +
         "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
         "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:.6}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:1}}" +
         "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:.6}to{clip-path:inset(0 0 0 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:1}}";
@@ -1751,6 +1752,40 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
   }
 
+  // "T" birleşimi: panelin kart kenarına değdiği iki yere içbükey pah (SVG)
+  // ve çerçeveli temalarda panelin alt çizgisini kartın üstünde gizleyen
+  // küçük bir yama koyar. Pozisyon her değiştiğinde yeniden çizilir.
+  _updateTee(p, tee, up, rect, r) {
+    (p.tee || []).forEach((e) => e.remove());
+    p.tee = [];
+    if (!tee) return;
+    const pr = p.panel.getBoundingClientRect();
+    const cs = getComputedStyle(p.panel);
+    const bw = parseFloat(cs.borderLeftWidth) || 0;
+    const fill = p._surface;
+    const stroke = cs.borderLeftColor;
+    const edge = up ? pr.bottom : pr.top;
+    const y = up ? edge - 0.5 : edge - r + 0.5;
+    const mk = (x, flipX) => {
+      const el = document.createElement("div");
+      el.style.cssText = `position:fixed; left:${x}px; top:${y}px; width:${r}px; height:${r}px; pointer-events:none; animation:xap-fade .2s ease-out; transform:scale(${flipX ? -1 : 1}, ${up ? 1 : -1});`;
+      el.innerHTML = `<svg width="${r}" height="${r}" viewBox="0 0 ${r} ${r}" style="display:block; overflow:visible;">
+        <path d="M0,0 L${r},0 L${r},${r} A${r},${r} 0 0 0 0,0 Z" style="fill:${fill};"/>
+        ${bw ? `<path d="M${r},${r} A${r},${r} 0 0 0 0,0" fill="none" style="stroke:${stroke}; stroke-width:${bw};"/>` : ""}
+      </svg>`;
+      p.ov.appendChild(el);
+      p.tee.push(el);
+    };
+    mk(rect.left - r, false);
+    mk(rect.right, true);
+    if (bw) {
+      const patch = document.createElement("div");
+      patch.style.cssText = `position:fixed; left:${rect.left + bw}px; top:${up ? edge - bw : edge}px; width:${Math.max(0, rect.width - 2 * bw)}px; height:${bw}px; background:${fill}; pointer-events:none;`;
+      p.ov.appendChild(patch);
+      p.tee.push(patch);
+    }
+  }
+
   _positionPopup() {
     const p = this._popup;
     if (!p) return;
@@ -1783,10 +1818,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     if (!p._joined) {
       // Dar (dikey) kart: kart genişliğinde açılırsa içerik sıkışır. Kartın
-      // üstünde/altında, ortalanmış, kendi genişliğinde yüzen bir panel.
+      // üstünde/altında ortalanmış 300px'lik bir panel açılır ve karta "T"
+      // şeklinde, birleşim yerlerinde içbükey pahlarla (fillet) bağlanır.
+      // Kenara yakın olup pahlar sığmıyorsa karttan 8px ayrık yüzen panele düşer.
       const fw = Math.min(300, vw - 16);
       const fl = Math.max(8, Math.min(rect.left + rect.width / 2 - fw / 2, vw - fw - 8));
-      const GAP = 8;
+      const fr = Math.max(14, Math.min(parseFloat(R) || 12, 20));
+      const tee = rect.left - fl >= fr + 6 && fl + fw - rect.right >= fr + 6;
+      const GAP = tee ? 0 : 8;
       p.panel.style.width = `${fw}px`;
       p.panel.style.left = `${fl}px`;
       p.panel.style.maxHeight = "none";
@@ -1795,7 +1834,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       const sDown = vh - rect.bottom - GAP - 8;
       const fUp = fnat <= sUp ? true : fnat <= sDown ? false : sUp >= sDown;
       p.panel.style.borderRadius = R;
-      p.panel.style.boxShadow = "0 8px 28px rgba(0,0,0,0.35)";
+      p.panel.style.boxShadow = tee ? "none" : "0 8px 28px rgba(0,0,0,0.35)";
       if (fUp) {
         p.panel.style.top = "auto";
         p.panel.style.bottom = `${vh - rect.top + GAP}px`;
@@ -1807,6 +1846,19 @@ class XiaomiAirPurifierCard extends HTMLElement {
         p.panel.style.maxHeight = `${Math.max(120, sDown)}px`;
         p.panel.style.transformOrigin = "top center";
       }
+      if (card) {
+        const ta = tee && fUp;
+        const tb = tee && !fUp;
+        card.style.borderTopLeftRadius = ta ? "0" : "";
+        card.style.borderTopRightRadius = ta ? "0" : "";
+        card.style.borderBottomLeftRadius = tb ? "0" : "";
+        card.style.borderBottomRightRadius = tb ? "0" : "";
+        card.style.borderTopColor = ta ? "transparent" : "";
+        card.style.borderBottomColor = tb ? "transparent" : "";
+        card.style.backgroundColor = tee ? p._surface : "";
+        card.style.backdropFilter = tee ? p._blur : "";
+      }
+      this._updateTee(p, tee, fUp, rect, fr);
       if (!p._animSet) {
         p._animSet = true;
         p.panel.style.animation = "xap-pop-in .18s ease-out";
