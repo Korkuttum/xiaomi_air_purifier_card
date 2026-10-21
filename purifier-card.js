@@ -32,6 +32,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.offlineEntity = config.offline_entity || null;
     this.staleMinutes = config.stale_minutes || 15;
 
+    // Ek özellikler: filtre halkası, detay penceresi, parçacık/etiket
+    // ayarları. Hepsi opsiyonel; verilmezse kart eskisi gibi çalışır.
+    this.filterEntity = config.filter_life_entity || null;
+    this.filterRing = config.filter_ring || "always"; // always | low | off
+    this.pm10Entity = config.pm10_entity || null;
+    this.co2Entity = config.co2_entity || null;
+    this.tvocEntity = config.tvoc_entity || null;
+    this.timerEntity = config.timer_entity || null;
+    this.controls = Array.isArray(config.controls) ? config.controls : [];
+    this.showAqiLabel = config.air_quality_label === true;
+    this.particlesEnabled = config.particles !== false;
+    this.pmThresholds =
+      Array.isArray(config.pm25_thresholds) && config.pm25_thresholds.length === 4
+        ? config.pm25_thresholds.map(Number)
+        : [12, 35, 55, 150];
+
     // İkon (fan ikonu / güç düğmesi) için 3 aksiyon. Varsayılanlar HA
     // Tile card'la aynı tarzda: ikona dokun → cihazı aç/kapat; hold ve
     // double-tap kapalı. Kullanıcı her birini ui_action editöründen
@@ -212,11 +228,43 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // ile kart-level handler tetiklenmesin.
     if (els.modeBtn && !els.modeBtn._xapModeBound) {
       els.modeBtn._xapModeBound = true;
-      els.modeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      let modeHoldTimer = null;
+      let modeDidHold = false;
+      els.modeBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        modeDidHold = false;
+        if (this._isPreview) return;
+        modeHoldTimer = setTimeout(() => {
+          modeDidHold = true;
+          this._fireHaptic("medium");
+          this._openPopup("modes");
+        }, 500);
+      });
+      const cancelModeHold = () => {
+        if (modeHoldTimer) {
+          clearTimeout(modeHoldTimer);
+          modeHoldTimer = null;
+        }
+      };
+      els.modeBtn.addEventListener("pointercancel", cancelModeHold);
+      els.modeBtn.addEventListener("pointerleave", cancelModeHold);
       els.modeBtn.addEventListener("pointerup", (e) => {
         e.stopPropagation();
-        if (this._isPreview) return;
+        cancelModeHold();
+        if (this._isPreview || modeDidHold) return;
         this._cycleMode();
+      });
+    }
+
+    // PM2.5 sütununa dokununca detay penceresi.
+    if (els.pmCol && !els.pmCol._xapPmBound) {
+      els.pmCol._xapPmBound = true;
+      els.pmCol.style.cursor = "pointer";
+      els.pmCol.addEventListener("pointerdown", (e) => e.stopPropagation());
+      els.pmCol.addEventListener("pointerup", (e) => {
+        e.stopPropagation();
+        if (this._isPreview) return;
+        this._openPopup("details");
       });
     }
   }
@@ -286,10 +334,35 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // bir kart olduğu için varsayılan İngilizce, sadece Türkçe kullanıcıya
   // Türkçe gösteriyoruz.
   _offlineBadgeText() {
-    const raw =
-      this._hass?.locale?.language || this._hass?.language || "en";
+    return this._s("offline");
+  }
+
+  // Kartın kendi ürettiği metinler (rozet, pencere başlıkları, hava
+  // kalitesi etiketleri). Anahtar -> dil kodu -> metin; dil yoksa en.
+  _strings() {
+    return {
+      offline: { en: "Offline", tr: "Çevrimdışı", de: "Offline", fr: "Hors ligne", es: "Sin conexión" },
+      filter: { en: "Filter", tr: "Filtre", de: "Filter", fr: "Filtre", es: "Filtro" },
+      speed: { en: "Fan speed", tr: "Fan hızı", de: "Lüfterstufe", fr: "Vitesse", es: "Velocidad" },
+      mode: { en: "Mode", tr: "Mod", de: "Modus", fr: "Mode", es: "Modo" },
+      timer: { en: "Turn off in", tr: "Kapanma süresi", de: "Ausschalten in", fr: "Arrêt dans", es: "Apagar en" },
+      timer_off: { en: "Off", tr: "Kapalı", de: "Aus", fr: "Désactivé", es: "Apagado" },
+      controls: { en: "Controls", tr: "Kontroller", de: "Steuerung", fr: "Commandes", es: "Controles" },
+      temperature: { en: "Temperature", tr: "Sıcaklık", de: "Temperatur", fr: "Température", es: "Temperatura" },
+      humidity: { en: "Humidity", tr: "Nem", de: "Luftfeuchte", fr: "Humidité", es: "Humedad" },
+      aq0: { en: "Good", tr: "İyi", de: "Gut", fr: "Bon", es: "Buena" },
+      aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada" },
+      aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala" },
+      aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre" },
+      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa" },
+    };
+  }
+
+  _s(key) {
+    const raw = this._hass?.locale?.language || this._hass?.language || "en";
     const lang = raw.toLowerCase().slice(0, 2);
-    return lang === "tr" ? "Çevrimdışı" : "Offline";
+    const entry = this._strings()[key] || {};
+    return entry[lang] || entry.en || key;
   }
 
   // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
@@ -502,7 +575,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
       activeStep,
       scale,
       offline: offlineStatus.offline,
+      filterLife: this._isPreview ? 82 : this._getFilterLife(attrs),
     });
+    this._isOffline = offlineStatus.offline;
+    this._refreshPopup();
   }
 
   _buildSkeleton() {
@@ -1000,7 +1076,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
     els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
-    els.pmUnit.textContent = d.pm25Unit;
+    els.pmUnit.textContent =
+      this.showAqiLabel && this._getAqiLabel(d.pm25) ? this._getAqiLabel(d.pm25) : d.pm25Unit;
 
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
@@ -1037,6 +1114,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.card.style.filter = "";
     }
 
+    this._updateFilterRing(d);
     this._updateParticleSystem(d);
   }
 
@@ -1078,7 +1156,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
     els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
-    els.pmUnit.textContent = d.pm25Unit;
+    els.pmUnit.textContent =
+      this.showAqiLabel && this._getAqiLabel(d.pm25) ? this._getAqiLabel(d.pm25) : d.pm25Unit;
 
     els.thCol.style.gap = `${Math.max(6, Math.round(8 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
@@ -1112,6 +1191,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.card.style.filter = "";
     }
 
+    this._updateFilterRing(d);
     this._updateParticleSystem(d);
   }
 
@@ -1121,6 +1201,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
   _initParticles() {
     const canvas = this._els.particlesCanvas;
     if (!canvas) return;
+    if (!this.particlesEnabled) {
+      canvas.style.display = "none";
+      return;
+    }
     this._particleCtx = canvas.getContext("2d");
     this._particles = [];
     this._particleTargetCount = 0;
@@ -1287,11 +1371,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const num = Number(value);
     if (Number.isNaN(num)) return "var(--secondary-text-color)";
-    if (num <= 12) return "#4CAF50";
-    if (num <= 35) return "#FFC107";
-    if (num <= 55) return "#FF9800";
-    if (num <= 150) return "#F44336";
+    const t = this.pmThresholds || [12, 35, 55, 150];
+    if (num <= t[0]) return "#4CAF50";
+    if (num <= t[1]) return "#FFC107";
+    if (num <= t[2]) return "#FF9800";
+    if (num <= t[3]) return "#F44336";
     return "#9C27B0";
+  }
+
+  _getAqiLabel(value) {
+    const num = Number(value);
+    if (value === "--" || value === undefined || value === null || Number.isNaN(num)) {
+      return "";
+    }
+    const t = this.pmThresholds || [12, 35, 55, 150];
+    const idx = num <= t[0] ? 0 : num <= t[1] ? 1 : num <= t[2] ? 2 : num <= t[3] ? 3 : 4;
+    return this._s(`aq${idx}`);
   }
 
   _renderModeGlyphInto(container, step, moonHeartIconSize) {
@@ -1456,8 +1551,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     const currentIndex = this._getCurrentStepIndex(steps, attrs);
     const nextIndex = (currentIndex + 1) % steps.length;
-    const next = steps[nextIndex];
+    this._applyStep(steps[nextIndex], nextIndex);
+  }
 
+  _applyStep(next, nextIndex) {
     this._pendingStep = { step: next, index: nextIndex, ts: Date.now() };
 
     if (next.presetMode) {
@@ -1474,6 +1571,787 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
 
     this.render();
+  }
+
+
+  // ---------------------------------------------------------------------
+  // Filtre ömrü + halka
+  // ---------------------------------------------------------------------
+  // Filtre yüzdesi: önce filter_life_entity, yoksa fan attribute'ları
+  // (Miot: filter_life_level / filter_life_remaining / filter_life).
+  // Sayı bulunamazsa null döner ve halka çizilmez.
+  _getFilterLife(attrs) {
+    let raw = null;
+    if (this.filterEntity) {
+      const st = this._hass?.states[this.filterEntity];
+      if (st && st.state !== "unavailable" && st.state !== "unknown") raw = st.state;
+    } else {
+      raw =
+        attrs?.filter_life_level ??
+        attrs?.filter_life_remaining ??
+        attrs?.filter_life ??
+        null;
+    }
+    const num = Number(raw);
+    if (raw === null || raw === "" || Number.isNaN(num)) return null;
+    return Math.max(0, Math.min(100, num));
+  }
+
+  _filterColor(pct) {
+    if (pct > 20) return "#4CAF50";
+    if (pct > 10) return "#FF9800";
+    return "#F44336";
+  }
+
+  // Güç düğmesinin (fan ikonunun) etrafına ilerleme halkası. Halka ikonun
+  // kardeşi olarak çizilir, bu yüzden fan dönerken sabit kalır.
+  _updateFilterRing(d) {
+    const power = this._els?.power;
+    if (!power) return;
+    const pct = d.filterLife;
+    const visible =
+      this.filterRing !== "off" &&
+      pct !== null &&
+      pct !== undefined &&
+      (this.filterRing !== "low" || pct <= 20);
+
+    if (!visible) {
+      if (this._ring) this._ring.style.display = "none";
+      return;
+    }
+    if (!this._ring || !power.contains(this._ring)) {
+      power.style.position = "relative";
+      const R = 17;
+      const wrap = document.createElement("div");
+      wrap.className = "xap-filter-ring";
+      wrap.style.cssText =
+        "position:absolute; inset:-1px; pointer-events:none; z-index:2;";
+      wrap.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 38 38" style="display:block; overflow:visible;">
+        <circle cx="19" cy="19" r="${R}" fill="none" stroke="rgba(var(--rgb-secondary-text-color), 0.2)" stroke-width="2"/>
+        <circle class="xap-ring-arc" cx="19" cy="19" r="${R}" fill="none" stroke-width="2" stroke-linecap="round" transform="rotate(-90 19 19)" style="transition: stroke-dasharray .4s ease, stroke .4s ease;"/>
+      </svg>`;
+      power.appendChild(wrap);
+      this._ring = wrap;
+      this._ringArc = wrap.querySelector(".xap-ring-arc");
+    }
+    const C = 2 * Math.PI * 17;
+    this._ring.style.display = "";
+    this._ringArc.setAttribute("stroke-dasharray", `${(C * pct) / 100} ${C}`);
+    this._ringArc.setAttribute("stroke", this._filterColor(pct));
+  }
+
+  // ---------------------------------------------------------------------
+  // Detay ve mod pencereleri
+  // ---------------------------------------------------------------------
+  _esc(v) {
+    return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  _stepLabel(step) {
+    if (step.level) return `${step.presetMode ? step.presetMode + " " : ""}${step.level}`;
+    return (step.presetMode || step.label || "?").toString();
+  }
+
+  // Pencere kartın bulunduğu yerden açılır: alt kenarı kartın alt kenarıyla
+  // hizalı, içerik arttıkça YUKARI doğru uzar. Arkada karartma yok; boş
+  // alana dokunmak ya da Esc kapatır. Yer yetmezse üstten 8px boşluk
+  // bırakıp içeride kaydırılır.
+  _openPopup(kind) {
+    if (this._isPreview || !this._hass) return;
+    this._closePopup();
+    const ov = document.createElement("div");
+    ov.style.cssText =
+      "position:fixed; inset:0; z-index:9999; font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif);";
+    const panel = document.createElement("div");
+    panel.style.cssText =
+      "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; scrollbar-width:thin; scrollbar-color:rgba(var(--rgb-secondary-text-color, 155,155,155), 0.4) transparent; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
+    if (!document.getElementById("xap-pop-style4")) {
+      const st = document.createElement("style");
+      st.id = "xap-pop-style4";
+      st.textContent =
+        "@keyframes xap-fade{from{opacity:0}to{opacity:1}}" +
+        "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
+        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}}" +
+        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px))}to{clip-path:inset(0 0 0 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px))}}";
+      document.head.appendChild(st);
+    }
+    // İçerik, parçacık canvas'ının üstünde durması için ayrı bir katmanda.
+    const content = document.createElement("div");
+    content.style.cssText = "position:relative; z-index:1;";
+    panel.appendChild(content);
+    ov.appendChild(panel);
+    // Kapatma dokunma BIRAKILINCA yapılır; pointerdown'da kapatırsak bırakma
+    // alttaki karta düşüp PM sütununu/mod butonunu yeniden tetikler
+    // (kapanıp hemen tekrar açılırdı).
+    let downOnOverlay = false;
+    ov.addEventListener("pointerdown", (e) => {
+      downOnOverlay = e.target === ov;
+    });
+    ov.addEventListener("pointerup", (e) => {
+      if (downOnOverlay && e.target === ov) this._closePopup();
+      downOnOverlay = false;
+    });
+    panel.addEventListener("click", (e) => this._popupClick(e));
+    panel.addEventListener("pointerdown", (e) => this._popupPointerDown(e));
+    panel.addEventListener("pointermove", (e) => this._popupPointerMove(e));
+    panel.addEventListener("pointerup", () => this._popupPointerUp());
+    panel.addEventListener("pointercancel", () => this._popupPointerUp());
+    panel.addEventListener("keydown", (e) => this._popupKeyDown(e));
+    this._popupKeyHandler = (e) => {
+      if (e.key === "Escape") this._closePopup();
+    };
+    this._popupReposition = () => this._positionPopup();
+    document.addEventListener("keydown", this._popupKeyHandler);
+    window.addEventListener("resize", this._popupReposition);
+    window.addEventListener("scroll", this._popupReposition, true);
+    document.body.appendChild(ov);
+    this._popup = { ov, panel, kind, content };
+    this._renderPopup();
+    this._positionPopup();
+    this._startPopupParticles();
+  }
+
+  // Pencerenin zeminini, çerçevesini, yazı rengini ve fontunu kartın kendi
+  // hesaplanmış stilinden alır; böylece hangi tema/özel stil kullanılırsa
+  // kullanılsın pencere kartla aynı görünür.
+  _matchCardSurface(p) {
+    const card = this._els?.card;
+    if (!card) return;
+    const cs = getComputedStyle(card);
+    const st = p.panel.style;
+
+    // Kartın zemini yarı saydamsa (cam efektli temalar) pencere arkasındaki
+    // kartlar görünür ve yazılar iç içe girer. Aynı rengi neredeyse opak
+    // yapıp arkayı bulanıklaştırıyoruz; kart da pencere açıkken aynı zemini
+    // alır, böylece ikisi tek parça görünür.
+    if (p._surface === undefined) {
+      const m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor || "");
+      const parts = m ? m[1].split(/[\s,\/]+/).filter(Boolean).map(Number) : [];
+      const alpha = parts.length > 3 ? parts[3] : 1;
+      const ok = parts.length >= 3 && !parts.slice(0, 3).some(Number.isNaN);
+      p._surface = ok
+        ? `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(alpha, 0.92)})`
+        : "var(--card-background-color, #1c1c1c)";
+      p._solid = ok ? `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})` : p._surface;
+      p._blur = cs.backdropFilter && cs.backdropFilter !== "none" ? cs.backdropFilter : "blur(20px)";
+    }
+    st.backgroundColor = p._surface;
+    st.backgroundImage = cs.backgroundImage && cs.backgroundImage !== "none" ? cs.backgroundImage : "none";
+    st.backdropFilter = p._blur;
+    st.webkitBackdropFilter = p._blur;
+    st.borderStyle = cs.borderLeftStyle;
+    st.borderColor = cs.borderLeftColor;
+    st.borderWidth = cs.borderLeftWidth;
+    st.color = cs.color;
+    st.fontFamily = cs.fontFamily;
+    // Dar (dikey) kartlarda pencere karta yapışmaz, yüzer; o durumda
+    // kartın kendi zeminine dokunmuyoruz.
+    if (p._joined === undefined) p._joined = card.getBoundingClientRect().width >= 200;
+    if (p.kind !== "modes" && !p._cardTransition) {
+      p._cardTransition = true;
+      card.style.transition = "border-radius .2s ease-out, background-color .2s ease-out";
+    }
+    if (p.kind !== "modes" && p._joined) {
+      card.style.backgroundColor = p._surface;
+      card.style.backdropFilter = p._blur;
+    }
+  }
+
+  // "T" birleşimi: panelin kart kenarına değdiği iki yere içbükey pah (SVG)
+  // ve çerçeveli temalarda panelin alt çizgisini kartın üstünde gizleyen
+  // küçük bir yama koyar. Pozisyon her değiştiğinde yeniden çizilir.
+  _updateTee(p, tee, up, rect, r) {
+    if (!tee) {
+      (p.tee || []).forEach((e) => e.remove());
+      p.tee = null;
+      p._teeSig = null;
+      return;
+    }
+    const pr = p.panel.getBoundingClientRect();
+    const cs = getComputedStyle(p.panel);
+    const bw = parseFloat(cs.borderLeftWidth) || 0;
+    const fill = p._surface;
+    const stroke = cs.borderLeftColor;
+    const edge = up ? pr.bottom : pr.top;
+    const y = up ? edge - 0.5 : edge - r + 0.5;
+
+    // Parçalar sadece görünüm (yön, boyut, renk) değişince yeniden kurulur.
+    // Her konum güncellemesinde silip yeniden yaratmak belirme animasyonunu
+    // baştan oynatıp pahların yanıp sönmesine yol açıyordu; artık sadece
+    // ilk kuruluşta animasyon var, sonrasında yalnızca konum güncellenir.
+    const sig = `${up}|${r}|${bw}|${fill}|${stroke}`;
+    if (!p.tee || p._teeSig !== sig) {
+      (p.tee || []).forEach((e) => e.remove());
+      p.tee = [];
+      p._teeSig = sig;
+      const animate = !p._teeShown;
+      p._teeShown = true;
+      const mk = (flipX) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:fixed; width:${r}px; height:${r}px; pointer-events:none; ${animate ? "animation:xap-fade .2s ease-out;" : ""} transform:scale(${flipX ? -1 : 1}, ${up ? 1 : -1});`;
+        el.innerHTML = `<svg width="${r}" height="${r}" viewBox="0 0 ${r} ${r}" style="display:block; overflow:visible;">
+        <path d="M0,0 L${r},0 L${r},${r} A${r},${r} 0 0 0 0,0 Z" style="fill:${fill};"/>
+        ${bw ? `<path d="M${r},${r} A${r},${r} 0 0 0 0,0" fill="none" style="stroke:${stroke}; stroke-width:${bw};"/>` : ""}
+      </svg>`;
+        p.ov.appendChild(el);
+        p.tee.push(el);
+      };
+      mk(false);
+      mk(true);
+      if (bw) {
+        // Çerçeveli temalarda birleşimde kalan düz çizgileri örtmek için 3
+        // yama: panelin pahlar dahil kart genişliği boyunca uzanan alt/üst
+        // çizgisi ve kartın iki yan çerçevesinin pah yüksekliğindeki kısmı.
+        for (let i = 0; i < 3; i++) {
+          const patch = document.createElement("div");
+          patch.style.cssText = `position:fixed; background:${p._solid || fill}; pointer-events:none;`;
+          p.ov.appendChild(patch);
+          p.tee.push(patch);
+        }
+      }
+    }
+    const [lf, rt, patchH, patchL, patchR] = p.tee;
+    lf.style.left = `${rect.left - r}px`;
+    lf.style.top = `${y}px`;
+    rt.style.left = `${rect.right}px`;
+    rt.style.top = `${y}px`;
+    if (patchH) {
+      patchH.style.left = `${rect.left - r}px`;
+      patchH.style.top = `${up ? edge - bw : edge}px`;
+      patchH.style.width = `${rect.width + 2 * r}px`;
+      patchH.style.height = `${bw}px`;
+      const vTop = up ? edge : edge - r;
+      patchL.style.left = `${rect.left}px`;
+      patchL.style.top = `${vTop}px`;
+      patchL.style.width = `${bw}px`;
+      patchL.style.height = `${r}px`;
+      patchR.style.left = `${rect.right - bw}px`;
+      patchR.style.top = `${vTop}px`;
+      patchR.style.width = `${bw}px`;
+      patchR.style.height = `${r}px`;
+    }
+  }
+
+  _positionPopup() {
+    const p = this._popup;
+    if (!p) return;
+    this._matchCardSurface(p);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (p.kind === "modes") {
+      // Seçili satır mod butonunun tam üstüne gelecek şekilde açılır.
+      const btn = (this._els?.modeBtn || this).getBoundingClientRect();
+      p.panel.style.width = "auto";
+      p.panel.style.maxHeight = `${vh - 16}px`;
+      const w = p.panel.offsetWidth;
+      const h = Math.min(p.panel.scrollHeight + 2, vh - 16);
+      const left = Math.max(8, Math.min(btn.left - 1, vw - w - 8));
+      const top = Math.max(8, Math.min(btn.top - (p._activeIdx || 0) * 50 - 1, vh - h - 8));
+      p.panel.style.left = `${left}px`;
+      p.panel.style.top = `${top}px`;
+      return;
+    }
+    // Kartın kendisi uzuyormuş gibi: aynı genişlik, aynı zemin/çerçeve,
+    // kartla arasında dikiş yok. Yukarıda yer varsa yukarı, yoksa aşağı
+    // doğru açılır.
+    const card = this._els?.card;
+    const rect = (card || this).getBoundingClientRect();
+    if (p._radius === undefined) {
+      p._radius = (card && getComputedStyle(card).borderTopLeftRadius) || "12px";
+    }
+    const R = p._radius;
+    p.panel.style.setProperty("--xap-r", R);
+
+    if (!p._joined) {
+      // Dar (dikey) kart: kart genişliğinde açılırsa içerik sıkışır. Kartın
+      // üstünde/altında ortalanmış 300px'lik bir panel açılır ve karta "T"
+      // şeklinde, birleşim yerlerinde içbükey pahlarla (fillet) bağlanır.
+      // Kenara yakın olup pahlar sığmıyorsa karttan 8px ayrık yüzen panele düşer.
+      const fw = Math.min(300, vw - 16);
+      const fl = Math.max(8, Math.min(rect.left + rect.width / 2 - fw / 2, vw - fw - 8));
+      const fr = Math.max(14, Math.min(parseFloat(R) || 12, 20));
+      const tee = rect.left - fl >= fr + 6 && fl + fw - rect.right >= fr + 6;
+      const GAP = tee ? 0 : 8;
+      p.panel.style.width = `${fw}px`;
+      p.panel.style.left = `${fl}px`;
+      p.panel.style.maxHeight = "none";
+      const fnat = p.panel.scrollHeight + 2;
+      const sUp = rect.top - GAP - 8;
+      const sDown = vh - rect.bottom - GAP - 8;
+      const fUp = fnat <= sUp ? true : fnat <= sDown ? false : sUp >= sDown;
+      p.panel.style.borderRadius = R;
+      p.panel.style.boxShadow = tee ? "none" : "0 8px 28px rgba(0,0,0,0.35)";
+      if (fUp) {
+        p.panel.style.top = "auto";
+        p.panel.style.bottom = `${vh - rect.top + GAP}px`;
+        p.panel.style.maxHeight = `${Math.max(120, sUp)}px`;
+        p.panel.style.transformOrigin = "bottom center";
+      } else {
+        p.panel.style.bottom = "auto";
+        p.panel.style.top = `${rect.bottom + GAP}px`;
+        p.panel.style.maxHeight = `${Math.max(120, sDown)}px`;
+        p.panel.style.transformOrigin = "top center";
+      }
+      if (card) {
+        const ta = tee && fUp;
+        const tb = tee && !fUp;
+        card.style.borderTopLeftRadius = ta ? "0" : "";
+        card.style.borderTopRightRadius = ta ? "0" : "";
+        card.style.borderBottomLeftRadius = tb ? "0" : "";
+        card.style.borderBottomRightRadius = tb ? "0" : "";
+        card.style.borderTopColor = ta ? "transparent" : "";
+        card.style.borderBottomColor = tb ? "transparent" : "";
+        card.style.backgroundColor = tee ? p._surface : "";
+        card.style.backdropFilter = tee ? p._blur : "";
+      }
+      this._updateTee(p, tee, fUp, rect, fr);
+      if (!p._animSet) {
+        p._animSet = true;
+        // Karta bağlıyken (T) panel kayarak gelmez, kartın kenarından açılır;
+        // yoksa kayma sırasında kartla arasında boşluk görünür.
+        p.panel.style.animation = tee
+          ? `${fUp ? "xap-grow-up" : "xap-grow-down"} .2s ease-out`
+          : "xap-pop-in .18s ease-out";
+      }
+      return;
+    }
+
+    const width = Math.min(rect.width, vw);
+    const left = Math.max(0, Math.min(rect.left, vw - width));
+    p.panel.style.width = `${width}px`;
+    p.panel.style.left = `${left}px`;
+    p.panel.style.boxShadow = "none";
+    // İçeriğin gerçek yüksekliğine göre yön: sığan yöne aç, ikisine de
+    // sığmıyorsa geniş olan yöne açıp içeride kaydır.
+    p.panel.style.maxHeight = "none";
+    const natural = p.panel.scrollHeight + 1;
+    const spaceUp = rect.top - 4;
+    const spaceDown = vh - rect.bottom - 4;
+    const up =
+      natural <= spaceUp ? true : natural <= spaceDown ? false : spaceUp >= spaceDown;
+    if (up) {
+      p.panel.style.top = "auto";
+      p.panel.style.bottom = `${vh - rect.top}px`;
+      p.panel.style.maxHeight = `${Math.max(120, rect.top - 4)}px`;
+      p.panel.style.borderRadius = `${R} ${R} 0 0`;
+      p.panel.style.borderBottomWidth = "0";
+      p.panel.style.transformOrigin = "bottom center";
+    } else {
+      p.panel.style.bottom = "auto";
+      p.panel.style.top = `${rect.bottom}px`;
+      p.panel.style.maxHeight = `${Math.max(120, vh - rect.bottom - 4)}px`;
+      p.panel.style.borderRadius = `0 0 ${R} ${R}`;
+      p.panel.style.borderTopWidth = "0";
+      p.panel.style.transformOrigin = "top center";
+    }
+    if (card) {
+      card.style.borderTopLeftRadius = up ? "0" : "";
+      card.style.borderTopRightRadius = up ? "0" : "";
+      card.style.borderBottomLeftRadius = up ? "" : "0";
+      card.style.borderBottomRightRadius = up ? "" : "0";
+      card.style.borderTopColor = up ? "transparent" : "";
+      card.style.borderBottomColor = up ? "" : "transparent";
+    }
+    if (!p._animSet) {
+      p._animSet = true;
+      p.panel.style.animation = `${up ? "xap-grow-up" : "xap-grow-down"} .2s ease-out`;
+    }
+  }
+
+  // Pencere içinde de kartın parçacıkları: PM2.5'e göre yoğunluk, fan
+  // yüzdesine göre hız, PM rengi. Parçacıklar fan ikonuna doğru akar ve
+  // pencerenin kartla birleştiği kenardan kartın içine geçer.
+  _startPopupParticles() {
+    const p = this._popup;
+    if (!p || p.kind === "modes" || !this.particlesEnabled) return;
+    const cv = document.createElement("canvas");
+    cv.style.cssText = "position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:0;";
+    p.panel.insertBefore(cv, p.panel.firstChild);
+    p.canvas = cv;
+    p.ctx = cv.getContext("2d");
+    p.parts = [];
+    const loop = () => {
+      if (this._popup !== p) return;
+      this._popupParticleFrame(p);
+      p.raf = requestAnimationFrame(loop);
+    };
+    p.raf = requestAnimationFrame(loop);
+  }
+
+  _popupParticleFrame(p) {
+    const panel = p.panel;
+    const w = panel.clientWidth;
+    const h = panel.clientHeight;
+    if (!w || !h || !this._els?.power) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (p.canvas.width !== Math.round(w * dpr) || p.canvas.height !== Math.round(h * dpr)) {
+      p.canvas.width = Math.round(w * dpr);
+      p.canvas.height = Math.round(h * dpr);
+    }
+    const ctx = p.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const fan = this._hass?.states[this.entity];
+    const attrs = fan?.attributes || {};
+    const pm = Number(
+      this._readValue(this.pm25Entity, attrs.pm25 || attrs.aqi || attrs.air_quality, "").value
+    );
+    const active = fan?.state === "on" && !this._isOffline;
+    const target = active ? Math.round(8 + (Math.min(Math.max(pm || 0, 0), 150) / 150) * 24) : 0;
+    let color = this._getPMColor(pm);
+    if (color.startsWith("var(")) color = "#9e9e9e";
+    const pct = typeof attrs.percentage === "number" ? attrs.percentage : 50;
+    const speed = 0.35 + (Math.max(0, Math.min(100, pct)) / 100) * 0.7;
+
+    const pw = this._els.power.getBoundingClientRect();
+    const pr = panel.getBoundingClientRect();
+    const fx = pw.left + pw.width / 2 - pr.left;
+    const fy = pw.top + pw.height / 2 - pr.top;
+    const fanBelow = fy > h / 2;
+
+    while (p.parts.length < target && Math.random() < 0.4) {
+      const edge = Math.floor(Math.random() * 3);
+      let x;
+      let y;
+      if (edge === 0) {
+        x = Math.random() * w;
+        y = fanBelow ? 2 : h - 2;
+      } else {
+        x = edge === 1 ? 2 : w - 2;
+        y = fanBelow ? Math.random() * h * 0.7 : h * 0.3 + Math.random() * h * 0.7;
+      }
+      const dx = fx - x;
+      const dy = fy - y;
+      const d = Math.hypot(dx, dy) || 1;
+      const v = speed * (0.5 + Math.random() * 0.7);
+      p.parts.push({ x, y, vx: (dx / d) * v, vy: (dy / d) * v, r: 0.8 + Math.random() * 1.4, a: 0 });
+    }
+
+    ctx.fillStyle = color;
+    p.parts = p.parts.filter((q) => {
+      q.x += q.vx;
+      q.y += q.vy;
+      q.a = Math.min(q.a + 0.02, 0.6);
+      const gone =
+        (fanBelow ? q.y > h + 4 : q.y < -4) ||
+        q.x < -10 || q.x > w + 10 ||
+        Math.hypot(fx - q.x, fy - q.y) < 10;
+      if (gone) return false;
+      ctx.globalAlpha = q.a;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    });
+    ctx.globalAlpha = 1;
+    // Hedef sayı düştüyse (hava temizlendi / cihaz kapandı) fazlayı eritip at.
+    while (p.parts.length > target + 6) p.parts.shift();
+  }
+
+  _closePopup() {
+    if (!this._popup) return;
+    if (this._popup.raf) cancelAnimationFrame(this._popup.raf);
+    this._popup.ov.remove();
+    this._popup = null;
+    const c = this._els?.card;
+    if (c) {
+      c.style.borderTopLeftRadius = "";
+      c.style.borderTopRightRadius = "";
+      c.style.borderBottomLeftRadius = "";
+      c.style.borderBottomRightRadius = "";
+      c.style.borderTopColor = "";
+      c.style.borderBottomColor = "";
+      c.style.backgroundColor = "";
+      c.style.backdropFilter = "";
+      c.style.transition = "";
+    }
+    document.removeEventListener("keydown", this._popupKeyHandler);
+    window.removeEventListener("resize", this._popupReposition);
+    window.removeEventListener("scroll", this._popupReposition, true);
+  }
+
+  _refreshPopup() {
+    if (!this._popup) return;
+    // Kullanıcı kaydırıcıyı sürüklerken yeniden çizip bozma.
+    if (this._dragging) return;
+    this._renderPopup();
+  }
+
+  _sensorRow(label, entityId, fallbackUnit) {
+    if (!entityId) return null;
+    const st = this._hass.states[entityId];
+    if (!st || st.state === "unavailable" || st.state === "unknown") return null;
+    const unit = st.attributes?.unit_of_measurement || fallbackUnit || "";
+    return { label, value: `${st.state}${unit ? " " + unit : ""}` };
+  }
+
+  // Mod adımı için HA'nın kendi fan/preset ikon diline yakın MDI ikonu.
+  _stepIcon(step) {
+    const preset = (step.presetMode || "").toString().toLowerCase();
+    if (step.level) return `mdi:fan-speed-${Math.min(step.level, 3)}`;
+    const map = {
+      auto: "mdi:brightness-auto",
+      sleep: "mdi:moon-waning-crescent",
+      night: "mdi:moon-waning-crescent",
+      favorite: "mdi:heart",
+      silent: "mdi:volume-off",
+      low: "mdi:fan-speed-1",
+      medium: "mdi:fan-speed-2",
+      high: "mdi:fan-speed-3",
+      turbo: "mdi:fan-speed-3",
+      manual: "mdi:fan",
+    };
+    return map[preset] || "mdi:fan";
+  }
+
+  _renderPopup() {
+    const p = this._popup;
+    if (!p) return;
+    const fan = this._hass.states[this.entity];
+    if (!fan) return;
+    const attrs = fan.attributes || {};
+    const steps = this._getModeSteps(attrs);
+    const activeIdx = this._getCurrentStepIndex(steps, attrs);
+    const name = attrs.friendly_name || this.entity;
+
+    const ACTIVE = "var(--primary-color, #03a9f4)";
+    const IDLE_BG = "rgba(var(--rgb-secondary-text-color, 155,155,155), 0.12)";
+
+    // HA'nın ikonlu seçim butonları: kare, yuvarlak köşe, seçili olan
+    // dolu primary renk.
+    const tile = (act, data, icon, label, active) => `<button data-act="${act}" ${data} title="${this._esc(label)}" style="
+        cursor:pointer; border:none; border-radius:18px; width:64px; height:60px; padding:0;
+        display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+        background:${active ? ACTIVE : IDLE_BG}; color:${active ? "#fff" : "var(--secondary-text-color)"}; font:inherit;">
+        <ha-icon icon="${icon}" style="--mdc-icon-size:24px; display:flex;"></ha-icon>
+        <span style="font-size:10px; max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._esc(label)}</span>
+      </button>`;
+    // HA'nın ha-control-select görünümü: tek parça yuvarlak çubuk içinde
+    // eşit genişlikte metin seçenekleri.
+    const segmented = (act, items) => `<div style="display:flex; background:color-mix(in srgb, var(--primary-text-color, #e1e1e1) 12%, transparent); border-radius:25px; padding:4px; gap:2px;">${items
+      .map(([dataAttr, label, active]) => `<button data-act="${act}" ${dataAttr} style="
+        flex:1; cursor:pointer; border:none; border-radius:21px; padding:10px 4px; font:inherit; font-size:13px; font-weight:500; white-space:nowrap;
+        background:${active ? "var(--primary-color, #03a9f4)" : "transparent"}; color:${active ? "var(--text-primary-color, #fff)" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
+      .join("")}</div>`;
+    const section = (title, body) =>
+      `<div style="margin-top:12px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px;">${this._esc(title)}</div>${body}</div>`;
+    // xiaomi-vacuum-map-card'ın mod seçiminden uyarlanan iki görünüm:
+    // 1) pillRow: hap biçimli kapta 50px yuvarlak ikon butonları, seçili
+    //    olan dolu. 2) dropdownList: dikey liste, satırda 50px ikon +
+    //    mod adı, seçili satır tam genişlikte dolu hap.
+    const BIG = "25px";
+    const PRIMARY = "var(--primary-color, #03a9f4)";
+    const SECONDARY = "color-mix(in srgb, var(--primary-text-color, #e1e1e1) 12%, transparent)";
+    const ON_PRIMARY = "var(--text-primary-color, #fff)";
+    const pillRow = () => `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:2px; padding:4px; border-radius:${BIG}; background:${SECONDARY};">${steps
+      .map((st, i) => `<button data-act="step" data-i="${i}" title="${this._esc(this._stepLabel(st))}" style="
+          cursor:pointer; border:none; padding:0; width:42px; height:42px; display:flex; align-items:center; justify-content:center;
+          border-radius:21px; background:${i === activeIdx ? PRIMARY : "transparent"}; color:${i === activeIdx ? ON_PRIMARY : "var(--primary-text-color)"};">
+          <ha-icon icon="${this._stepIcon(st)}" style="--mdc-icon-size:24px; display:flex;"></ha-icon></button>`)
+      .join("")}</div>`;
+    const dropdownList = () => `<div style="display:flex; flex-direction:column;">${steps
+      .map((st, i) => {
+        const sel = i === activeIdx;
+        const first = i === 0;
+        const last = i === steps.length - 1;
+        const cellRadius = sel ? `${BIG} 0 0 ${BIG}` : `${first ? BIG : "0"} ${first ? BIG : "0"} ${last ? BIG : "0"} ${last ? BIG : "0"}`;
+        return `<button data-act="step" data-i="${i}" style="
+            cursor:pointer; border:none; padding:0; display:flex; align-items:center; text-align:left; font:inherit; height:50px;
+            border-radius:${sel ? BIG : "0"}; background:${sel ? PRIMARY : "transparent"}; color:${sel ? ON_PRIMARY : "var(--primary-text-color)"};">
+            <span style="width:50px; height:50px; flex:none; display:flex; align-items:center; justify-content:center; border-radius:${cellRadius}; background:${sel ? PRIMARY : SECONDARY};">
+              <ha-icon icon="${this._stepIcon(st)}" style="--mdc-icon-size:24px; display:flex;"></ha-icon></span>
+            <span style="padding:0 18px 0 10px; white-space:nowrap;">${this._esc(this._stepLabel(st))}</span></button>`;
+      })
+      .join("")}</div>`;
+    const activeLabel = activeIdx >= 0 && steps[activeIdx] ? this._stepLabel(steps[activeIdx]) : "";
+
+    let body = "";
+    if (p.kind === "modes") {
+      body = dropdownList();
+    } else {
+      const pm = this._readValue(this.pm25Entity, attrs.pm25 || attrs.aqi || attrs.air_quality, "µg/m³");
+      const t = this._readValue(this.temperatureEntity, attrs.temperature ?? attrs.temp, "°C");
+      const h = this._readValue(this.humidityEntity, attrs.humidity, "%");
+      const rows = [
+        pm.value !== "--" && { label: "PM2.5", value: `${pm.value} ${pm.unit}`, color: this._getPMColor(pm.value) },
+        this._sensorRow("PM10", this.pm10Entity, "µg/m³"),
+        this._sensorRow("CO₂", this.co2Entity, "ppm"),
+        this._sensorRow("TVOC", this.tvocEntity, ""),
+        t.value !== "--" && { label: this._s("temperature"), value: `${t.value}${t.unit}` },
+        h.value !== "--" && { label: this._s("humidity"), value: `${h.value}${h.unit}` },
+      ].filter(Boolean);
+      const life = this._getFilterLife(attrs);
+      body += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;">${rows
+        .map((r) => `<div><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:17px; font-weight:500; white-space:nowrap; ${r.color ? `color:${r.color};` : ""}">${this._esc(r.value)}</div></div>`)
+        .join("")}</div>`;
+      if (life !== null) {
+        body += section(
+          `${this._s("filter")} · ${Math.round(life)}%`,
+          `<div style="height:8px; border-radius:4px; background:${IDLE_BG}; overflow:hidden;"><div style="height:100%; width:${life}%; background:${this._filterColor(life)}; border-radius:4px;"></div></div>`
+        );
+      }
+      if (typeof attrs.percentage === "number") {
+        const stepSize = attrs.percentage_step > 0 ? attrs.percentage_step : 1;
+        const val = Math.round(attrs.percentage);
+        // HA ha-control-slider görünümü: kalın, yuvarlak, dolgulu çubuk
+        // ve ucunda ince tutamaç.
+        body += section(
+          `${this._s("speed")} · ${val}%`,
+          `<div data-act="slider" data-step="${stepSize}" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${val}"
+              style="position:relative; height:44px; border-radius:22px; background:color-mix(in srgb, ${ACTIVE} 20%, transparent); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
+              <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:${ACTIVE}; border-radius:22px 0 0 22px;"></div>
+              <div class="xap-slider-handle" style="position:absolute; top:50%; left:calc(${val}% - 10px); width:4px; height:24px; margin-top:-12px; border-radius:2px; background:#fff; ${val <= 0 ? "display:none;" : ""}"></div>
+           </div>`
+        );
+      }
+      if (steps.length) {
+        body += section(`${this._s("mode")}${activeLabel ? " · " + activeLabel : ""}`, pillRow());
+      }
+      if (this.timerEntity) {
+        const cur = Number(this._hass.states[this.timerEntity]?.state);
+        body += section(
+          this._s("timer"),
+          segmented(
+            "timer",
+            [0, 30, 60, 120, 240].map((m) => [
+              `data-v="${m}"`,
+              m === 0 ? this._s("timer_off") : m < 60 ? `${m}m` : `${m / 60}h`,
+              cur === m,
+            ])
+          )
+        );
+      }
+      if (this.controls.length) {
+        body += section(
+          this._s("controls"),
+          `<div style="display:flex; flex-wrap:wrap; gap:8px;">${this.controls
+            .map((eid) => {
+              const st = this._hass.states[eid];
+              if (!st) return "";
+              const on = st.state === "on" || st.state === "locked";
+              const isLock = eid.startsWith("lock.");
+              const icon =
+                st.attributes?.icon ||
+                (isLock ? (on ? "mdi:lock" : "mdi:lock-open-variant") : on ? "mdi:toggle-switch" : "mdi:toggle-switch-off");
+              return tile("control", `data-e="${this._esc(eid)}"`, icon, st.attributes?.friendly_name || eid, on);
+            })
+            .join("")}</div>`
+        );
+      }
+    }
+
+    if (p.kind === "modes") {
+      p.panel.style.padding = "0";
+      p.panel.style.borderRadius = "25px";
+      if (p._html !== body) {
+        p.content.innerHTML = body;
+        p._html = body;
+      }
+      p._activeIdx = Math.max(0, activeIdx);
+    } else {
+      p.panel.style.padding = "16px";
+      p.panel.style.borderRadius = "var(--ha-card-border-radius, 12px)";
+      const html = `<div style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
+        <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:22px; line-height:1;">×</button>
+      </div>${body}`;
+      if (p._html !== html) {
+        p.content.innerHTML = html;
+        p._html = html;
+      }
+    }
+    this._positionPopup();
+  }
+
+  // Kaydırıcıda parmağın/imlecin konumunu yüzdeye çevirir ve çubuğu
+  // anında günceller. Servis çağrısı sadece bırakınca yapılır.
+  _sliderUpdate(clientX) {
+    const el = this._popup?.panel.querySelector('[data-act="slider"]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const step = Number(el.dataset.step) || 1;
+    let v = Math.round(((clientX - r.left) / r.width) * 100 / step) * step;
+    v = Math.max(0, Math.min(100, v));
+    el.querySelector(".xap-slider-fill").style.width = `${v}%`;
+    const handle = el.querySelector(".xap-slider-handle");
+    handle.style.left = `calc(${v}% - 10px)`;
+    handle.style.display = v <= 0 ? "none" : "";
+    el.setAttribute("aria-valuenow", String(v));
+    this._sliderValue = v;
+    return v;
+  }
+
+  _sliderCommit() {
+    if (this._sliderValue === null || this._sliderValue === undefined) return;
+    if (this._popup) this._popup._html = null;
+    this._hass.callService("fan", "set_percentage", {
+      entity_id: this.entity,
+      percentage: this._sliderValue,
+    });
+    this._sliderValue = null;
+  }
+
+  _popupPointerDown(e) {
+    const el = e.target.closest?.('[data-act="slider"]');
+    if (!el) return;
+    this._dragging = true;
+    el.setPointerCapture?.(e.pointerId);
+    this._sliderUpdate(e.clientX);
+  }
+
+  _popupPointerMove(e) {
+    if (this._dragging) this._sliderUpdate(e.clientX);
+  }
+
+  _popupPointerUp() {
+    if (!this._dragging) return;
+    this._dragging = false;
+    this._sliderCommit();
+  }
+
+  _popupKeyDown(e) {
+    const el = e.target.closest?.('[data-act="slider"]');
+    if (!el) return;
+    const step = Number(el.dataset.step) || 1;
+    const cur = Number(el.getAttribute("aria-valuenow")) || 0;
+    let v = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") v = cur + step;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") v = cur - step;
+    if (v === null) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    this._sliderUpdate(r.left + (Math.max(0, Math.min(100, v)) / 100) * r.width);
+    this._sliderCommit();
+  }
+
+  _popupClick(e) {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "close") return this._closePopup();
+    if (act === "step") {
+      const attrs = this._hass.states[this.entity]?.attributes || {};
+      const steps = this._getModeSteps(attrs);
+      const i = Number(btn.dataset.i);
+      if (steps[i]) this._applyStep(steps[i], i);
+      if (this._popup?.kind === "modes") this._closePopup();
+    } else if (act === "timer") {
+      const domain = this.timerEntity.split(".")[0];
+      this._hass.callService(domain, "set_value", {
+        entity_id: this.timerEntity,
+        value: Number(btn.dataset.v),
+      });
+    } else if (act === "control") {
+      const eid = btn.dataset.e;
+      const domain = eid.split(".")[0];
+      if (domain === "lock") {
+        const locked = this._hass.states[eid]?.state === "locked";
+        this._hass.callService("lock", locked ? "unlock" : "lock", { entity_id: eid });
+      } else {
+        this._hass.callService("homeassistant", "toggle", { entity_id: eid });
+      }
+    }
   }
 
   _openMoreInfo(entityId) {
@@ -1502,6 +2380,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._closePopup();
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -1570,23 +2449,40 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
   // çevirileri varsa onlardan, yoksa İngilizce fallback gösterir.
   _dict() {
     // Anahtar = İngilizce fallback string. Değer = dile göre çeviri.
-    // Yeni dil eklemek istersen sadece bu tabloya yeni anahtarlar ekle.
+    // Yeni dil eklemek istersen her satıra yeni bir dil kodu ekle.
     return {
-      Sensors: { tr: "Sensörler" },
-      Appearance: { tr: "Görünüm" },
-      Interactions: { tr: "Etkileşimler" },
-      Icon: { tr: "İkon" },
-      Card: { tr: "Kart" },
-      "Content layout": { tr: "İçerik düzeni" },
-      Horizontal: { tr: "Yatay" },
-      Vertical: { tr: "Dikey" },
-      "Tap behavior": { tr: "Dokunma davranışı" },
-      "Hold behavior": { tr: "Basılı tutma davranışı" },
-      "Double tap behavior": { tr: "Çift dokunma davranışı" },
-      "PM2.5 sensor": { tr: "PM2.5 sensörü" },
-      "Temperature sensor": { tr: "Sıcaklık sensörü" },
-      "Humidity sensor": { tr: "Nem sensörü" },
-      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)" },
+      Sensors: { tr: "Sensörler", de: "Sensoren", fr: "Capteurs", es: "Sensores" },
+      Appearance: { tr: "Görünüm", de: "Darstellung", fr: "Apparence", es: "Apariencia" },
+      Interactions: { tr: "Etkileşimler", de: "Interaktionen", fr: "Interactions", es: "Interacciones" },
+      Icon: { tr: "İkon", de: "Symbol", fr: "Icône", es: "Icono" },
+      Card: { tr: "Kart", de: "Karte", fr: "Carte", es: "Tarjeta" },
+      "Content layout": { tr: "İçerik düzeni", de: "Inhaltslayout", fr: "Disposition du contenu", es: "Diseño del contenido" },
+      Horizontal: { tr: "Yatay", de: "Horizontal", fr: "Horizontal", es: "Horizontal" },
+      Vertical: { tr: "Dikey", de: "Vertikal", fr: "Vertical", es: "Vertical" },
+      "Tap behavior": { tr: "Dokunma davranışı", de: "Verhalten beim Tippen", fr: "Comportement au toucher", es: "Comportamiento al tocar" },
+      "Hold behavior": { tr: "Basılı tutma davranışı", de: "Verhalten beim Halten", fr: "Comportement au maintien", es: "Comportamiento al mantener" },
+      "Double tap behavior": { tr: "Çift dokunma davranışı", de: "Verhalten beim Doppeltippen", fr: "Comportement au double toucher", es: "Comportamiento al tocar dos veces" },
+      "PM2.5 sensor": { tr: "PM2.5 sensörü", de: "PM2.5-Sensor", fr: "Capteur PM2.5", es: "Sensor PM2.5" },
+      "Temperature sensor": { tr: "Sıcaklık sensörü", de: "Temperatursensor", fr: "Capteur de température", es: "Sensor de temperatura" },
+      "Humidity sensor": { tr: "Nem sensörü", de: "Feuchtigkeitssensor", fr: "Capteur d'humidité", es: "Sensor de humedad" },
+      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)", de: "Verbindungssensor (wird automatisch erkannt, zum Überschreiben)", fr: "Capteur de connectivité (détecté automatiquement, pour forcer)", es: "Sensor de conectividad (se detecta automáticamente, para anular)" },
+      Extras: { tr: "Ek özellikler", de: "Zusatzfunktionen", fr: "Extras", es: "Extras" },
+      "Filter life sensor": { tr: "Filtre ömrü sensörü", de: "Sensor Filterlebensdauer", fr: "Capteur de durée de vie du filtre", es: "Sensor de vida del filtro" },
+      "PM10 sensor": { tr: "PM10 sensörü", de: "PM10-Sensor", fr: "Capteur PM10", es: "Sensor PM10" },
+      "CO2 sensor": { tr: "CO₂ sensörü", de: "CO₂-Sensor", fr: "Capteur CO₂", es: "Sensor de CO₂" },
+      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC" },
+      "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)", de: "Timer (Zahl, Minuten)", fr: "Minuterie (nombre, minutes)", es: "Temporizador (número, minutos)" },
+      "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)", de: "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)", fr: "Commandes supplémentaires (verrou enfant, LED, buzzer...)", es: "Controles adicionales (bloqueo infantil, LED, zumbador...)" },
+      "Filter ring": { tr: "Filtre halkası", de: "Filterring", fr: "Anneau du filtre", es: "Anillo del filtro" },
+      Always: { tr: "Her zaman", de: "Immer", fr: "Toujours", es: "Siempre" },
+      "Only when low": { tr: "Sadece düşükken", de: "Nur bei niedrigem Stand", fr: "Seulement si faible", es: "Solo cuando es bajo" },
+      Hidden: { tr: "Gizli", de: "Ausgeblendet", fr: "Masqué", es: "Oculto" },
+      "Show air quality label": { tr: "Hava kalitesi etiketini göster", de: "Luftqualitätsbezeichnung anzeigen", fr: "Afficher le libellé de qualité d'air", es: "Mostrar etiqueta de calidad del aire" },
+      "Dust particles animation": { tr: "Toz parçacığı animasyonu", de: "Staubpartikel-Animation", fr: "Animation des particules de poussière", es: "Animación de partículas de polvo" },
+      "PM2.5 limit: green": { tr: "PM2.5 sınırı: yeşil (µg/m³)", de: "PM2.5-Grenze: Grün (µg/m³)", fr: "Limite PM2.5 : vert (µg/m³)", es: "Límite PM2.5: verde (µg/m³)" },
+      "PM2.5 limit: yellow": { tr: "PM2.5 sınırı: sarı (µg/m³)", de: "PM2.5-Grenze: Gelb (µg/m³)", fr: "Limite PM2.5 : jaune (µg/m³)", es: "Límite PM2.5: amarillo (µg/m³)" },
+      "PM2.5 limit: orange": { tr: "PM2.5 sınırı: turuncu (µg/m³)", de: "PM2.5-Grenze: Orange (µg/m³)", fr: "Limite PM2.5 : orange (µg/m³)", es: "Límite PM2.5: naranja (µg/m³)" },
+      "PM2.5 limit: red": { tr: "PM2.5 sınırı: kırmızı (µg/m³)", de: "PM2.5-Grenze: Rot (µg/m³)", fr: "Limite PM2.5 : rouge (µg/m³)", es: "Límite PM2.5: rojo (µg/m³)" },
     };
   }
 
@@ -1717,6 +2613,52 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
             name: "offline_entity",
             selector: { entity: {} },
           },
+        ],
+      },
+
+      // EK ÖZELLİKLER paneli — filtre halkası, detay penceresindeki ek
+      // sensörler, zamanlayıcı ve ek kontroller.
+      {
+        type: "expandable",
+        name: "",
+        title: this._t(null, "Extras"),
+        iconPath:
+          "M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z",
+        schema: [
+          { name: "filter_life_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "pm10_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "co2_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "tvoc_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "timer_entity", selector: { entity: { domain: ["number", "input_number"] } } },
+          {
+            name: "controls",
+            selector: { entity: { multiple: true, domain: ["switch", "input_boolean", "lock"] } },
+          },
+          {
+            name: "filter_ring",
+            selector: {
+              select: {
+                mode: "dropdown",
+                options: [
+                  { value: "always", label: this._t(null, "Always") },
+                  { value: "low", label: this._t(null, "Only when low") },
+                  { value: "off", label: this._t(null, "Hidden") },
+                ],
+              },
+            },
+          },
+          { name: "air_quality_label", selector: { boolean: {} } },
+          {
+            type: "grid",
+            name: "",
+            schema: [
+              { name: "pm25_t1", selector: { number: { min: 0, max: 1000, mode: "box" } } },
+              { name: "pm25_t2", selector: { number: { min: 0, max: 1000, mode: "box" } } },
+              { name: "pm25_t3", selector: { number: { min: 0, max: 1000, mode: "box" } } },
+              { name: "pm25_t4", selector: { number: { min: 0, max: 1000, mode: "box" } } },
+            ],
+          },
+          { name: "particles", selector: { boolean: {} } },
         ],
       },
 
@@ -1864,6 +2806,32 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       }
       case "offline_entity":
         return this._t(null, "Connectivity sensor");
+      case "filter_life_entity":
+        return this._t(null, "Filter life sensor");
+      case "pm10_entity":
+        return this._t(null, "PM10 sensor");
+      case "co2_entity":
+        return this._t(null, "CO2 sensor");
+      case "tvoc_entity":
+        return this._t(null, "TVOC sensor");
+      case "timer_entity":
+        return this._t(null, "Timer (number, minutes)");
+      case "controls":
+        return this._t(null, "Extra controls (child lock, LED, buzzer...)");
+      case "filter_ring":
+        return this._t(null, "Filter ring");
+      case "air_quality_label":
+        return this._t(null, "Show air quality label");
+      case "particles":
+        return this._t(null, "Dust particles animation");
+      case "pm25_t1":
+        return this._t(null, "PM2.5 limit: green");
+      case "pm25_t2":
+        return this._t(null, "PM2.5 limit: yellow");
+      case "pm25_t3":
+        return this._t(null, "PM2.5 limit: orange");
+      case "pm25_t4":
+        return this._t(null, "PM2.5 limit: red");
       case "layout":
         return this._t(
           "ui.panel.lovelace.editor.card.tile.content_layout",
@@ -1927,6 +2895,15 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     if (!data.layout) {
       data.layout = "horizontal";
     }
+    if (!data.filter_ring) data.filter_ring = "always";
+    // pm25_thresholds dizisi editörde 4 ayrı sayı alanı olarak gösterilir.
+    const th =
+      Array.isArray(data.pm25_thresholds) && data.pm25_thresholds.length === 4
+        ? data.pm25_thresholds
+        : [12, 35, 55, 150];
+    [data.pm25_t1, data.pm25_t2, data.pm25_t3, data.pm25_t4] = th;
+    delete data.pm25_thresholds;
+    if (data.particles === undefined) data.particles = true;
 
     this._haForm.hass = this._hass;
     this._haForm.schema = this._schema();
@@ -1992,6 +2969,23 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     }
     // layout: horizontal varsayılan olduğu için config'e yazmaya gerek yok.
     if (incoming.layout === "horizontal") delete incoming.layout;
+    // 4 sayı alanı -> pm25_thresholds dizisi (varsayılansa YAML'a yazılmaz).
+    const parts = [incoming.pm25_t1, incoming.pm25_t2, incoming.pm25_t3, incoming.pm25_t4].map(Number);
+    delete incoming.pm25_t1;
+    delete incoming.pm25_t2;
+    delete incoming.pm25_t3;
+    delete incoming.pm25_t4;
+    const DEFAULT_TH = [12, 35, 55, 150];
+    if (parts.every((n) => Number.isFinite(n)) && parts.some((n, i) => n !== DEFAULT_TH[i])) {
+      incoming.pm25_thresholds = parts;
+    } else {
+      delete incoming.pm25_thresholds;
+    }
+    if (incoming.filter_ring === "always") delete incoming.filter_ring;
+    if (incoming.particles === true) delete incoming.particles;
+    if (incoming.air_quality_label === false) delete incoming.air_quality_label;
+    if (Array.isArray(incoming.controls) && !incoming.controls.length)
+      delete incoming.controls;
 
     this._config = incoming;
     this.dispatchEvent(
