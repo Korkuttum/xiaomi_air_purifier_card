@@ -1679,8 +1679,16 @@ class XiaomiAirPurifierCard extends HTMLElement {
     content.style.cssText = "position:relative; z-index:1;";
     panel.appendChild(content);
     ov.appendChild(panel);
+    // Kapatma dokunma BIRAKILINCA yapılır; pointerdown'da kapatırsak bırakma
+    // alttaki karta düşüp PM sütununu/mod butonunu yeniden tetikler
+    // (kapanıp hemen tekrar açılırdı).
+    let downOnOverlay = false;
     ov.addEventListener("pointerdown", (e) => {
-      if (e.target === ov) this._closePopup();
+      downOnOverlay = e.target === ov;
+    });
+    ov.addEventListener("pointerup", (e) => {
+      if (downOnOverlay && e.target === ov) this._closePopup();
+      downOnOverlay = false;
     });
     panel.addEventListener("click", (e) => this._popupClick(e));
     panel.addEventListener("pointerdown", (e) => this._popupPointerDown(e));
