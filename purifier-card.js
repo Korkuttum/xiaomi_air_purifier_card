@@ -1696,9 +1696,42 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this._positionPopup();
   }
 
+  // Pencerenin zeminini, çerçevesini, yazı rengini ve fontunu kartın kendi
+  // hesaplanmış stilinden alır; böylece hangi tema/özel stil kullanılırsa
+  // kullanılsın pencere kartla aynı görünür.
+  _matchCardSurface(p) {
+    const card = this._els?.card;
+    if (!card) return;
+    const cs = getComputedStyle(card);
+    const st = p.panel.style;
+    if (p.kind === "modes") {
+      // Düğmenin üstüne biner, saydam olmamalı: kartın zemini (renk +
+      // varsa gradyan) opak bir tabanın üstüne katman olarak konur.
+      const layers = [];
+      if (cs.backgroundImage && cs.backgroundImage !== "none") layers.push(cs.backgroundImage);
+      layers.push(`linear-gradient(${cs.backgroundColor}, ${cs.backgroundColor})`);
+      layers.push("linear-gradient(var(--card-background-color, #1c1c1c), var(--card-background-color, #1c1c1c))");
+      st.background = layers.join(", ");
+      st.borderStyle = cs.borderLeftStyle;
+      st.borderColor = cs.borderLeftColor;
+      st.borderWidth = cs.borderLeftWidth;
+    } else {
+      st.backgroundColor = cs.backgroundColor;
+      st.backgroundImage = cs.backgroundImage;
+      st.backdropFilter = cs.backdropFilter;
+      st.webkitBackdropFilter = cs.webkitBackdropFilter || cs.backdropFilter;
+      st.borderStyle = cs.borderLeftStyle;
+      st.borderColor = cs.borderLeftColor;
+      st.borderWidth = cs.borderLeftWidth;
+    }
+    st.color = cs.color;
+    st.fontFamily = cs.fontFamily;
+  }
+
   _positionPopup() {
     const p = this._popup;
     if (!p) return;
+    this._matchCardSurface(p);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     if (p.kind === "modes") {
@@ -1841,10 +1874,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
       </button>`;
     // HA'nın ha-control-select görünümü: tek parça yuvarlak çubuk içinde
     // eşit genişlikte metin seçenekleri.
-    const segmented = (act, items) => `<div style="display:flex; background:var(--slider-secondary-color, rgba(var(--rgb-secondary-text-color, 155,155,155), 0.2)); border-radius:25px; padding:4px; gap:2px;">${items
+    const segmented = (act, items) => `<div style="display:flex; background:color-mix(in srgb, var(--primary-text-color, #e1e1e1) 12%, transparent); border-radius:25px; padding:4px; gap:2px;">${items
       .map(([dataAttr, label, active]) => `<button data-act="${act}" ${dataAttr} style="
         flex:1; cursor:pointer; border:none; border-radius:21px; padding:10px 4px; font:inherit; font-size:13px; font-weight:500; white-space:nowrap;
-        background:${active ? "var(--slider-color, var(--primary-color, #03a9f4))" : "transparent"}; color:${active ? "var(--text-primary-color, #fff)" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
+        background:${active ? "var(--primary-color, #03a9f4)" : "transparent"}; color:${active ? "var(--text-primary-color, #fff)" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
       .join("")}</div>`;
     const section = (title, body) =>
       `<div style="margin-top:12px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px;">${this._esc(title)}</div>${body}</div>`;
@@ -1853,8 +1886,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     //    olan dolu. 2) dropdownList: dikey liste, satırda 50px ikon +
     //    mod adı, seçili satır tam genişlikte dolu hap.
     const BIG = "25px";
-    const PRIMARY = "var(--slider-color, var(--primary-color, #03a9f4))";
-    const SECONDARY = "var(--slider-secondary-color, rgba(var(--rgb-secondary-text-color, 155,155,155), 0.2))";
+    const PRIMARY = "var(--primary-color, #03a9f4)";
+    const SECONDARY = "color-mix(in srgb, var(--primary-text-color, #e1e1e1) 12%, transparent)";
     const ON_PRIMARY = "var(--text-primary-color, #fff)";
     const pillRow = () => `<div style="display:flex; flex-wrap:wrap; justify-content:center; border-radius:${BIG}; overflow:hidden; background:${SECONDARY};">${steps
       .map((st, i) => `<button data-act="step" data-i="${i}" title="${this._esc(this._stepLabel(st))}" style="
@@ -1911,8 +1944,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
         body += section(
           `${this._s("speed")} · ${val}%`,
           `<div data-act="slider" data-step="${stepSize}" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${val}"
-              style="position:relative; height:44px; border-radius:22px; background:var(--slider-secondary-color, color-mix(in srgb, ${ACTIVE} 20%, transparent)); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
-              <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:var(--slider-color, ${ACTIVE}); border-radius:22px 0 0 22px;"></div>
+              style="position:relative; height:44px; border-radius:22px; background:color-mix(in srgb, ${ACTIVE} 20%, transparent); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
+              <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:${ACTIVE}; border-radius:22px 0 0 22px;"></div>
               <div class="xap-slider-handle" style="position:absolute; top:50%; left:calc(${val}% - 10px); width:4px; height:24px; margin-top:-12px; border-radius:2px; background:#fff; ${val <= 0 ? "display:none;" : ""}"></div>
            </div>`
         );
