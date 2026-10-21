@@ -577,6 +577,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       offline: offlineStatus.offline,
       filterLife: this._isPreview ? 82 : this._getFilterLife(attrs),
     });
+    this._isOffline = offlineStatus.offline;
     this._refreshPopup();
   }
 
@@ -1664,15 +1665,19 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const panel = document.createElement("div");
     panel.style.cssText =
       "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; scrollbar-width:thin; scrollbar-color:rgba(var(--rgb-secondary-text-color, 155,155,155), 0.4) transparent; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
-    if (!document.getElementById("xap-pop-style2")) {
+    if (!document.getElementById("xap-pop-style3")) {
       const st = document.createElement("style");
-      st.id = "xap-pop-style2";
+      st.id = "xap-pop-style3";
       st.textContent =
         "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
-        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0)}to{clip-path:inset(0)}}" +
-        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}";
+        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:.6}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:1}}" +
+        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:.6}to{clip-path:inset(0 0 0 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:1}}";
       document.head.appendChild(st);
     }
+    // İçerik, parçacık canvas'ının üstünde durması için ayrı bir katmanda.
+    const content = document.createElement("div");
+    content.style.cssText = "position:relative; z-index:1;";
+    panel.appendChild(content);
     ov.appendChild(panel);
     ov.addEventListener("pointerdown", (e) => {
       if (e.target === ov) this._closePopup();
@@ -1691,9 +1696,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     window.addEventListener("resize", this._popupReposition);
     window.addEventListener("scroll", this._popupReposition, true);
     document.body.appendChild(ov);
-    this._popup = { ov, panel, kind };
+    this._popup = { ov, panel, kind, content };
     this._renderPopup();
     this._positionPopup();
+    this._startPopupParticles();
   }
 
   // Pencerenin zeminini, çerçevesini, yazı rengini ve fontunu kartın kendi
@@ -1762,6 +1768,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       p._radius = (card && getComputedStyle(card).borderTopLeftRadius) || "12px";
     }
     const R = p._radius;
+    p.panel.style.setProperty("--xap-r", R);
     const width = Math.min(rect.width, vw);
     const left = Math.max(0, Math.min(rect.left, vw - width));
     p.panel.style.width = `${width}px`;
@@ -1804,8 +1811,100 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
   }
 
+  // Pencere içinde de kartın parçacıkları: PM2.5'e göre yoğunluk, fan
+  // yüzdesine göre hız, PM rengi. Parçacıklar fan ikonuna doğru akar ve
+  // pencerenin kartla birleştiği kenardan kartın içine geçer.
+  _startPopupParticles() {
+    const p = this._popup;
+    if (!p || p.kind === "modes" || !this.particlesEnabled) return;
+    const cv = document.createElement("canvas");
+    cv.style.cssText = "position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:0;";
+    p.panel.insertBefore(cv, p.panel.firstChild);
+    p.canvas = cv;
+    p.ctx = cv.getContext("2d");
+    p.parts = [];
+    const loop = () => {
+      if (this._popup !== p) return;
+      this._popupParticleFrame(p);
+      p.raf = requestAnimationFrame(loop);
+    };
+    p.raf = requestAnimationFrame(loop);
+  }
+
+  _popupParticleFrame(p) {
+    const panel = p.panel;
+    const w = panel.clientWidth;
+    const h = panel.clientHeight;
+    if (!w || !h || !this._els?.power) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (p.canvas.width !== Math.round(w * dpr) || p.canvas.height !== Math.round(h * dpr)) {
+      p.canvas.width = Math.round(w * dpr);
+      p.canvas.height = Math.round(h * dpr);
+    }
+    const ctx = p.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const fan = this._hass?.states[this.entity];
+    const attrs = fan?.attributes || {};
+    const pm = Number(
+      this._readValue(this.pm25Entity, attrs.pm25 || attrs.aqi || attrs.air_quality, "").value
+    );
+    const active = fan?.state === "on" && !this._isOffline;
+    const target = active ? Math.round(8 + (Math.min(Math.max(pm || 0, 0), 150) / 150) * 24) : 0;
+    let color = this._getPMColor(pm);
+    if (color.startsWith("var(")) color = "#9e9e9e";
+    const pct = typeof attrs.percentage === "number" ? attrs.percentage : 50;
+    const speed = 0.35 + (Math.max(0, Math.min(100, pct)) / 100) * 0.7;
+
+    const pw = this._els.power.getBoundingClientRect();
+    const pr = panel.getBoundingClientRect();
+    const fx = pw.left + pw.width / 2 - pr.left;
+    const fy = pw.top + pw.height / 2 - pr.top;
+    const fanBelow = fy > h / 2;
+
+    while (p.parts.length < target && Math.random() < 0.4) {
+      const edge = Math.floor(Math.random() * 3);
+      let x;
+      let y;
+      if (edge === 0) {
+        x = Math.random() * w;
+        y = fanBelow ? 2 : h - 2;
+      } else {
+        x = edge === 1 ? 2 : w - 2;
+        y = fanBelow ? Math.random() * h * 0.7 : h * 0.3 + Math.random() * h * 0.7;
+      }
+      const dx = fx - x;
+      const dy = fy - y;
+      const d = Math.hypot(dx, dy) || 1;
+      const v = speed * (0.5 + Math.random() * 0.7);
+      p.parts.push({ x, y, vx: (dx / d) * v, vy: (dy / d) * v, r: 0.8 + Math.random() * 1.4, a: 0 });
+    }
+
+    ctx.fillStyle = color;
+    p.parts = p.parts.filter((q) => {
+      q.x += q.vx;
+      q.y += q.vy;
+      q.a = Math.min(q.a + 0.02, 0.6);
+      const gone =
+        (fanBelow ? q.y > h + 4 : q.y < -4) ||
+        q.x < -10 || q.x > w + 10 ||
+        Math.hypot(fx - q.x, fy - q.y) < 10;
+      if (gone) return false;
+      ctx.globalAlpha = q.a;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    });
+    ctx.globalAlpha = 1;
+    // Hedef sayı düştüyse (hava temizlendi / cihaz kapandı) fazlayı eritip at.
+    while (p.parts.length > target + 6) p.parts.shift();
+  }
+
   _closePopup() {
     if (!this._popup) return;
+    if (this._popup.raf) cancelAnimationFrame(this._popup.raf);
     this._popup.ov.remove();
     this._popup = null;
     const c = this._els?.card;
@@ -1897,10 +1996,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const PRIMARY = "var(--primary-color, #03a9f4)";
     const SECONDARY = "color-mix(in srgb, var(--primary-text-color, #e1e1e1) 12%, transparent)";
     const ON_PRIMARY = "var(--text-primary-color, #fff)";
-    const pillRow = () => `<div style="display:flex; flex-wrap:wrap; justify-content:center; border-radius:${BIG}; overflow:hidden; background:${SECONDARY};">${steps
+    const pillRow = () => `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:2px; padding:4px; border-radius:${BIG}; background:${SECONDARY};">${steps
       .map((st, i) => `<button data-act="step" data-i="${i}" title="${this._esc(this._stepLabel(st))}" style="
-          cursor:pointer; border:none; padding:0; width:50px; height:50px; display:flex; align-items:center; justify-content:center;
-          border-radius:${BIG}; background:${i === activeIdx ? PRIMARY : "transparent"}; color:${i === activeIdx ? ON_PRIMARY : "var(--primary-text-color)"};">
+          cursor:pointer; border:none; padding:0; width:42px; height:42px; display:flex; align-items:center; justify-content:center;
+          border-radius:21px; background:${i === activeIdx ? PRIMARY : "transparent"}; color:${i === activeIdx ? ON_PRIMARY : "var(--primary-text-color)"};">
           <ha-icon icon="${this._stepIcon(st)}" style="--mdc-icon-size:24px; display:flex;"></ha-icon></button>`)
       .join("")}</div>`;
     const dropdownList = () => `<div style="display:flex; flex-direction:column;">${steps
@@ -1997,12 +2096,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (p.kind === "modes") {
       p.panel.style.padding = "0";
       p.panel.style.borderRadius = "25px";
-      p.panel.innerHTML = body;
+      p.content.innerHTML = body;
       p._activeIdx = Math.max(0, activeIdx);
     } else {
       p.panel.style.padding = "16px";
       p.panel.style.borderRadius = "var(--ha-card-border-radius, 12px)";
-      p.panel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
+      p.content.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
         <div style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
         <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:22px; line-height:1;">×</button>
       </div>${body}`;
