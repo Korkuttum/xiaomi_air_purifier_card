@@ -1728,10 +1728,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
       const m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor || "");
       const parts = m ? m[1].split(/[\s,\/]+/).filter(Boolean).map(Number) : [];
       const alpha = parts.length > 3 ? parts[3] : 1;
-      p._surface =
-        parts.length >= 3 && !parts.slice(0, 3).some(Number.isNaN)
-          ? `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(alpha, 0.92)})`
-          : "var(--card-background-color, #1c1c1c)";
+      const ok = parts.length >= 3 && !parts.slice(0, 3).some(Number.isNaN);
+      p._surface = ok
+        ? `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(alpha, 0.92)})`
+        : "var(--card-background-color, #1c1c1c)";
+      p._solid = ok ? `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})` : p._surface;
       p._blur = cs.backdropFilter && cs.backdropFilter !== "none" ? cs.backdropFilter : "blur(20px)";
     }
     st.backgroundColor = p._surface;
@@ -1798,21 +1799,36 @@ class XiaomiAirPurifierCard extends HTMLElement {
       mk(false);
       mk(true);
       if (bw) {
-        const patch = document.createElement("div");
-        patch.style.cssText = `position:fixed; height:${bw}px; background:${fill}; pointer-events:none;`;
-        p.ov.appendChild(patch);
-        p.tee.push(patch);
+        // Çerçeveli temalarda birleşimde kalan düz çizgileri örtmek için 3
+        // yama: panelin pahlar dahil kart genişliği boyunca uzanan alt/üst
+        // çizgisi ve kartın iki yan çerçevesinin pah yüksekliğindeki kısmı.
+        for (let i = 0; i < 3; i++) {
+          const patch = document.createElement("div");
+          patch.style.cssText = `position:fixed; background:${p._solid || fill}; pointer-events:none;`;
+          p.ov.appendChild(patch);
+          p.tee.push(patch);
+        }
       }
     }
-    const [lf, rt, patch] = p.tee;
+    const [lf, rt, patchH, patchL, patchR] = p.tee;
     lf.style.left = `${rect.left - r}px`;
     lf.style.top = `${y}px`;
     rt.style.left = `${rect.right}px`;
     rt.style.top = `${y}px`;
-    if (patch) {
-      patch.style.left = `${rect.left + bw}px`;
-      patch.style.top = `${up ? edge - bw : edge}px`;
-      patch.style.width = `${Math.max(0, rect.width - 2 * bw)}px`;
+    if (patchH) {
+      patchH.style.left = `${rect.left - r}px`;
+      patchH.style.top = `${up ? edge - bw : edge}px`;
+      patchH.style.width = `${rect.width + 2 * r}px`;
+      patchH.style.height = `${bw}px`;
+      const vTop = up ? edge : edge - r;
+      patchL.style.left = `${rect.left}px`;
+      patchL.style.top = `${vTop}px`;
+      patchL.style.width = `${bw}px`;
+      patchL.style.height = `${r}px`;
+      patchR.style.left = `${rect.right - bw}px`;
+      patchR.style.top = `${vTop}px`;
+      patchR.style.width = `${bw}px`;
+      patchR.style.height = `${r}px`;
     }
   }
 
