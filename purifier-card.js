@@ -1742,7 +1742,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     st.borderWidth = cs.borderLeftWidth;
     st.color = cs.color;
     st.fontFamily = cs.fontFamily;
-    if (p.kind !== "modes") {
+    // Dar (dikey) kartlarda pencere karta yapışmaz, yüzer; o durumda
+    // kartın kendi zeminine dokunmuyoruz.
+    if (p._joined === undefined) p._joined = card.getBoundingClientRect().width >= 200;
+    if (p.kind !== "modes" && p._joined) {
       card.style.backgroundColor = p._surface;
       card.style.backdropFilter = p._blur;
     }
@@ -1777,6 +1780,40 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const R = p._radius;
     p.panel.style.setProperty("--xap-r", R);
+
+    if (!p._joined) {
+      // Dar (dikey) kart: kart genişliğinde açılırsa içerik sıkışır. Kartın
+      // üstünde/altında, ortalanmış, kendi genişliğinde yüzen bir panel.
+      const fw = Math.min(300, vw - 16);
+      const fl = Math.max(8, Math.min(rect.left + rect.width / 2 - fw / 2, vw - fw - 8));
+      const GAP = 8;
+      p.panel.style.width = `${fw}px`;
+      p.panel.style.left = `${fl}px`;
+      p.panel.style.maxHeight = "none";
+      const fnat = p.panel.scrollHeight + 2;
+      const sUp = rect.top - GAP - 8;
+      const sDown = vh - rect.bottom - GAP - 8;
+      const fUp = fnat <= sUp ? true : fnat <= sDown ? false : sUp >= sDown;
+      p.panel.style.borderRadius = R;
+      p.panel.style.boxShadow = "0 8px 28px rgba(0,0,0,0.35)";
+      if (fUp) {
+        p.panel.style.top = "auto";
+        p.panel.style.bottom = `${vh - rect.top + GAP}px`;
+        p.panel.style.maxHeight = `${Math.max(120, sUp)}px`;
+        p.panel.style.transformOrigin = "bottom center";
+      } else {
+        p.panel.style.bottom = "auto";
+        p.panel.style.top = `${rect.bottom + GAP}px`;
+        p.panel.style.maxHeight = `${Math.max(120, sDown)}px`;
+        p.panel.style.transformOrigin = "top center";
+      }
+      if (!p._animSet) {
+        p._animSet = true;
+        p.panel.style.animation = "xap-pop-in .18s ease-out";
+      }
+      return;
+    }
+
     const width = Math.min(rect.width, vw);
     const left = Math.max(0, Math.min(rect.left, vw - width));
     p.panel.style.width = `${width}px`;
