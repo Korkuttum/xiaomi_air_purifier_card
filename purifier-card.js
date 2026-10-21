@@ -1760,9 +1760,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // ve çerçeveli temalarda panelin alt çizgisini kartın üstünde gizleyen
   // küçük bir yama koyar. Pozisyon her değiştiğinde yeniden çizilir.
   _updateTee(p, tee, up, rect, r) {
-    (p.tee || []).forEach((e) => e.remove());
-    p.tee = [];
-    if (!tee) return;
+    if (!tee) {
+      (p.tee || []).forEach((e) => e.remove());
+      p.tee = null;
+      p._teeSig = null;
+      return;
+    }
     const pr = p.panel.getBoundingClientRect();
     const cs = getComputedStyle(p.panel);
     const bw = parseFloat(cs.borderLeftWidth) || 0;
@@ -1770,23 +1773,46 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const stroke = cs.borderLeftColor;
     const edge = up ? pr.bottom : pr.top;
     const y = up ? edge - 0.5 : edge - r + 0.5;
-    const mk = (x, flipX) => {
-      const el = document.createElement("div");
-      el.style.cssText = `position:fixed; left:${x}px; top:${y}px; width:${r}px; height:${r}px; pointer-events:none; animation:xap-fade .2s ease-out; transform:scale(${flipX ? -1 : 1}, ${up ? 1 : -1});`;
-      el.innerHTML = `<svg width="${r}" height="${r}" viewBox="0 0 ${r} ${r}" style="display:block; overflow:visible;">
+
+    // Parçalar sadece görünüm (yön, boyut, renk) değişince yeniden kurulur.
+    // Her konum güncellemesinde silip yeniden yaratmak belirme animasyonunu
+    // baştan oynatıp pahların yanıp sönmesine yol açıyordu; artık sadece
+    // ilk kuruluşta animasyon var, sonrasında yalnızca konum güncellenir.
+    const sig = `${up}|${r}|${bw}|${fill}|${stroke}`;
+    if (!p.tee || p._teeSig !== sig) {
+      (p.tee || []).forEach((e) => e.remove());
+      p.tee = [];
+      p._teeSig = sig;
+      const animate = !p._teeShown;
+      p._teeShown = true;
+      const mk = (flipX) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:fixed; width:${r}px; height:${r}px; pointer-events:none; ${animate ? "animation:xap-fade .2s ease-out;" : ""} transform:scale(${flipX ? -1 : 1}, ${up ? 1 : -1});`;
+        el.innerHTML = `<svg width="${r}" height="${r}" viewBox="0 0 ${r} ${r}" style="display:block; overflow:visible;">
         <path d="M0,0 L${r},0 L${r},${r} A${r},${r} 0 0 0 0,0 Z" style="fill:${fill};"/>
         ${bw ? `<path d="M${r},${r} A${r},${r} 0 0 0 0,0" fill="none" style="stroke:${stroke}; stroke-width:${bw};"/>` : ""}
       </svg>`;
-      p.ov.appendChild(el);
-      p.tee.push(el);
-    };
-    mk(rect.left - r, false);
-    mk(rect.right, true);
-    if (bw) {
-      const patch = document.createElement("div");
-      patch.style.cssText = `position:fixed; left:${rect.left + bw}px; top:${up ? edge - bw : edge}px; width:${Math.max(0, rect.width - 2 * bw)}px; height:${bw}px; background:${fill}; pointer-events:none;`;
-      p.ov.appendChild(patch);
-      p.tee.push(patch);
+        p.ov.appendChild(el);
+        p.tee.push(el);
+      };
+      mk(false);
+      mk(true);
+      if (bw) {
+        const patch = document.createElement("div");
+        patch.style.cssText = `position:fixed; height:${bw}px; background:${fill}; pointer-events:none;`;
+        p.ov.appendChild(patch);
+        p.tee.push(patch);
+      }
+    }
+    const [lf, rt, patch] = p.tee;
+    lf.style.left = `${rect.left - r}px`;
+    lf.style.top = `${y}px`;
+    rt.style.left = `${rect.right}px`;
+    rt.style.top = `${y}px`;
+    if (patch) {
+      patch.style.left = `${rect.left + bw}px`;
+      patch.style.top = `${up ? edge - bw : edge}px`;
+      patch.style.width = `${Math.max(0, rect.width - 2 * bw)}px`;
     }
   }
 
@@ -2202,15 +2228,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (p.kind === "modes") {
       p.panel.style.padding = "0";
       p.panel.style.borderRadius = "25px";
-      p.content.innerHTML = body;
+      if (p._html !== body) {
+        p.content.innerHTML = body;
+        p._html = body;
+      }
       p._activeIdx = Math.max(0, activeIdx);
     } else {
       p.panel.style.padding = "16px";
       p.panel.style.borderRadius = "var(--ha-card-border-radius, 12px)";
-      p.content.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
+      const html = `<div style="display:flex; align-items:center; justify-content:space-between;">
         <div style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
         <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:22px; line-height:1;">×</button>
       </div>${body}`;
+      if (p._html !== html) {
+        p.content.innerHTML = html;
+        p._html = html;
+      }
     }
     this._positionPopup();
   }
@@ -2235,6 +2268,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
   _sliderCommit() {
     if (this._sliderValue === null || this._sliderValue === undefined) return;
+    if (this._popup) this._popup._html = null;
     this._hass.callService("fan", "set_percentage", {
       entity_id: this.entity,
       percentage: this._sliderValue,
