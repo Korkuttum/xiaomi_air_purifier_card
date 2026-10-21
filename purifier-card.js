@@ -1671,8 +1671,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
       st.textContent =
         "@keyframes xap-fade{from{opacity:0}to{opacity:1}}" +
         "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
-        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:.6}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0);opacity:1}}" +
-        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:.6}to{clip-path:inset(0 0 0 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px));opacity:1}}";
+        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}}" +
+        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px))}to{clip-path:inset(0 0 0 0 round 0 0 var(--xap-r,20px) var(--xap-r,20px))}}";
       document.head.appendChild(st);
     }
     // İçerik, parçacık canvas'ının üstünde durması için ayrı bir katmanda.
@@ -1746,6 +1746,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // Dar (dikey) kartlarda pencere karta yapışmaz, yüzer; o durumda
     // kartın kendi zeminine dokunmuyoruz.
     if (p._joined === undefined) p._joined = card.getBoundingClientRect().width >= 200;
+    if (p.kind !== "modes" && !p._cardTransition) {
+      p._cardTransition = true;
+      card.style.transition = "border-radius .2s ease-out, background-color .2s ease-out";
+    }
     if (p.kind !== "modes" && p._joined) {
       card.style.backgroundColor = p._surface;
       card.style.backdropFilter = p._blur;
@@ -1861,7 +1865,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
       this._updateTee(p, tee, fUp, rect, fr);
       if (!p._animSet) {
         p._animSet = true;
-        p.panel.style.animation = "xap-pop-in .18s ease-out";
+        // Karta bağlıyken (T) panel kayarak gelmez, kartın kenarından açılır;
+        // yoksa kayma sırasında kartla arasında boşluk görünür.
+        p.panel.style.animation = tee
+          ? `${fUp ? "xap-grow-up" : "xap-grow-down"} .2s ease-out`
+          : "xap-pop-in .18s ease-out";
       }
       return;
     }
@@ -2014,6 +2022,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       c.style.borderBottomColor = "";
       c.style.backgroundColor = "";
       c.style.backdropFilter = "";
+      c.style.transition = "";
     }
     document.removeEventListener("keydown", this._popupKeyHandler);
     window.removeEventListener("resize", this._popupReposition);
