@@ -32,6 +32,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     this.offlineEntity = config.offline_entity || null;
     this.staleMinutes = config.stale_minutes || 15;
 
+    // Ek özellikler: filtre halkası, detay penceresi, parçacık/etiket
+    // ayarları. Hepsi opsiyonel; verilmezse kart eskisi gibi çalışır.
+    this.filterEntity = config.filter_life_entity || null;
+    this.filterRing = config.filter_ring || "always"; // always | low | off
+    this.pm10Entity = config.pm10_entity || null;
+    this.co2Entity = config.co2_entity || null;
+    this.tvocEntity = config.tvoc_entity || null;
+    this.timerEntity = config.timer_entity || null;
+    this.controls = Array.isArray(config.controls) ? config.controls : [];
+    this.showAqiLabel = config.air_quality_label === true;
+    this.particlesEnabled = config.particles !== false;
+    this.pmThresholds =
+      Array.isArray(config.pm25_thresholds) && config.pm25_thresholds.length === 4
+        ? config.pm25_thresholds.map(Number)
+        : [12, 35, 55, 150];
+
     // İkon (fan ikonu / güç düğmesi) için 3 aksiyon. Varsayılanlar HA
     // Tile card'la aynı tarzda: ikona dokun → cihazı aç/kapat; hold ve
     // double-tap kapalı. Kullanıcı her birini ui_action editöründen
@@ -212,11 +228,43 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // ile kart-level handler tetiklenmesin.
     if (els.modeBtn && !els.modeBtn._xapModeBound) {
       els.modeBtn._xapModeBound = true;
-      els.modeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      let modeHoldTimer = null;
+      let modeDidHold = false;
+      els.modeBtn.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        modeDidHold = false;
+        if (this._isPreview) return;
+        modeHoldTimer = setTimeout(() => {
+          modeDidHold = true;
+          this._fireHaptic("medium");
+          this._openPopup("modes");
+        }, 500);
+      });
+      const cancelModeHold = () => {
+        if (modeHoldTimer) {
+          clearTimeout(modeHoldTimer);
+          modeHoldTimer = null;
+        }
+      };
+      els.modeBtn.addEventListener("pointercancel", cancelModeHold);
+      els.modeBtn.addEventListener("pointerleave", cancelModeHold);
       els.modeBtn.addEventListener("pointerup", (e) => {
         e.stopPropagation();
-        if (this._isPreview) return;
+        cancelModeHold();
+        if (this._isPreview || modeDidHold) return;
         this._cycleMode();
+      });
+    }
+
+    // PM2.5 sütununa dokununca detay penceresi.
+    if (els.pmCol && !els.pmCol._xapPmBound) {
+      els.pmCol._xapPmBound = true;
+      els.pmCol.style.cursor = "pointer";
+      els.pmCol.addEventListener("pointerdown", (e) => e.stopPropagation());
+      els.pmCol.addEventListener("pointerup", (e) => {
+        e.stopPropagation();
+        if (this._isPreview) return;
+        this._openPopup("details");
       });
     }
   }
@@ -286,10 +334,35 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // bir kart olduğu için varsayılan İngilizce, sadece Türkçe kullanıcıya
   // Türkçe gösteriyoruz.
   _offlineBadgeText() {
-    const raw =
-      this._hass?.locale?.language || this._hass?.language || "en";
+    return this._s("offline");
+  }
+
+  // Kartın kendi ürettiği metinler (rozet, pencere başlıkları, hava
+  // kalitesi etiketleri). Anahtar -> dil kodu -> metin; dil yoksa en.
+  _strings() {
+    return {
+      offline: { en: "Offline", tr: "Çevrimdışı", de: "Offline", fr: "Hors ligne", es: "Sin conexión" },
+      filter: { en: "Filter", tr: "Filtre", de: "Filter", fr: "Filtre", es: "Filtro" },
+      speed: { en: "Fan speed", tr: "Fan hızı", de: "Lüfterstufe", fr: "Vitesse", es: "Velocidad" },
+      mode: { en: "Mode", tr: "Mod", de: "Modus", fr: "Mode", es: "Modo" },
+      timer: { en: "Turn off in", tr: "Kapanma süresi", de: "Ausschalten in", fr: "Arrêt dans", es: "Apagar en" },
+      timer_off: { en: "Off", tr: "Kapalı", de: "Aus", fr: "Désactivé", es: "Apagado" },
+      controls: { en: "Controls", tr: "Kontroller", de: "Steuerung", fr: "Commandes", es: "Controles" },
+      temperature: { en: "Temperature", tr: "Sıcaklık", de: "Temperatur", fr: "Température", es: "Temperatura" },
+      humidity: { en: "Humidity", tr: "Nem", de: "Luftfeuchte", fr: "Humidité", es: "Humedad" },
+      aq0: { en: "Good", tr: "İyi", de: "Gut", fr: "Bon", es: "Buena" },
+      aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada" },
+      aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala" },
+      aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre" },
+      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa" },
+    };
+  }
+
+  _s(key) {
+    const raw = this._hass?.locale?.language || this._hass?.language || "en";
     const lang = raw.toLowerCase().slice(0, 2);
-    return lang === "tr" ? "Çevrimdışı" : "Offline";
+    const entry = this._strings()[key] || {};
+    return entry[lang] || entry.en || key;
   }
 
   // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
@@ -502,7 +575,9 @@ class XiaomiAirPurifierCard extends HTMLElement {
       activeStep,
       scale,
       offline: offlineStatus.offline,
+      filterLife: this._isPreview ? 82 : this._getFilterLife(attrs),
     });
+    this._refreshPopup();
   }
 
   _buildSkeleton() {
@@ -1000,7 +1075,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
     els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
-    els.pmUnit.textContent = d.pm25Unit;
+    els.pmUnit.textContent =
+      this.showAqiLabel && this._getAqiLabel(d.pm25) ? this._getAqiLabel(d.pm25) : d.pm25Unit;
 
     els.thCol.style.gap = `${Math.max(1, Math.round(1 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
@@ -1037,6 +1113,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.card.style.filter = "";
     }
 
+    this._updateFilterRing(d);
     this._updateParticleSystem(d);
   }
 
@@ -1078,7 +1155,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     els.pmValue.style.color = d.pmColor;
     els.pmValue.textContent = d.pm25Display;
     els.pmUnit.style.fontSize = `${FIXED_PM_UNIT_FONT}px`;
-    els.pmUnit.textContent = d.pm25Unit;
+    els.pmUnit.textContent =
+      this.showAqiLabel && this._getAqiLabel(d.pm25) ? this._getAqiLabel(d.pm25) : d.pm25Unit;
 
     els.thCol.style.gap = `${Math.max(6, Math.round(8 * scale))}px`;
     [els.tempRow, els.humRow].forEach((row) => {
@@ -1112,6 +1190,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       els.card.style.filter = "";
     }
 
+    this._updateFilterRing(d);
     this._updateParticleSystem(d);
   }
 
@@ -1121,6 +1200,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
   _initParticles() {
     const canvas = this._els.particlesCanvas;
     if (!canvas) return;
+    if (!this.particlesEnabled) {
+      canvas.style.display = "none";
+      return;
+    }
     this._particleCtx = canvas.getContext("2d");
     this._particles = [];
     this._particleTargetCount = 0;
@@ -1287,11 +1370,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
     const num = Number(value);
     if (Number.isNaN(num)) return "var(--secondary-text-color)";
-    if (num <= 12) return "#4CAF50";
-    if (num <= 35) return "#FFC107";
-    if (num <= 55) return "#FF9800";
-    if (num <= 150) return "#F44336";
+    const t = this.pmThresholds || [12, 35, 55, 150];
+    if (num <= t[0]) return "#4CAF50";
+    if (num <= t[1]) return "#FFC107";
+    if (num <= t[2]) return "#FF9800";
+    if (num <= t[3]) return "#F44336";
     return "#9C27B0";
+  }
+
+  _getAqiLabel(value) {
+    const num = Number(value);
+    if (value === "--" || value === undefined || value === null || Number.isNaN(num)) {
+      return "";
+    }
+    const t = this.pmThresholds || [12, 35, 55, 150];
+    const idx = num <= t[0] ? 0 : num <= t[1] ? 1 : num <= t[2] ? 2 : num <= t[3] ? 3 : 4;
+    return this._s(`aq${idx}`);
   }
 
   _renderModeGlyphInto(container, step, moonHeartIconSize) {
@@ -1456,8 +1550,10 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     const currentIndex = this._getCurrentStepIndex(steps, attrs);
     const nextIndex = (currentIndex + 1) % steps.length;
-    const next = steps[nextIndex];
+    this._applyStep(steps[nextIndex], nextIndex);
+  }
 
+  _applyStep(next, nextIndex) {
     this._pendingStep = { step: next, index: nextIndex, ts: Date.now() };
 
     if (next.presetMode) {
@@ -1474,6 +1570,261 @@ class XiaomiAirPurifierCard extends HTMLElement {
     }
 
     this.render();
+  }
+
+
+  // ---------------------------------------------------------------------
+  // Filtre ömrü + halka
+  // ---------------------------------------------------------------------
+  // Filtre yüzdesi: önce filter_life_entity, yoksa fan attribute'ları
+  // (Miot: filter_life_level / filter_life_remaining / filter_life).
+  // Sayı bulunamazsa null döner ve halka çizilmez.
+  _getFilterLife(attrs) {
+    let raw = null;
+    if (this.filterEntity) {
+      const st = this._hass?.states[this.filterEntity];
+      if (st && st.state !== "unavailable" && st.state !== "unknown") raw = st.state;
+    } else {
+      raw =
+        attrs?.filter_life_level ??
+        attrs?.filter_life_remaining ??
+        attrs?.filter_life ??
+        null;
+    }
+    const num = Number(raw);
+    if (raw === null || raw === "" || Number.isNaN(num)) return null;
+    return Math.max(0, Math.min(100, num));
+  }
+
+  _filterColor(pct) {
+    if (pct > 20) return "#4CAF50";
+    if (pct > 10) return "#FF9800";
+    return "#F44336";
+  }
+
+  // Güç düğmesinin (fan ikonunun) etrafına ilerleme halkası. Halka ikonun
+  // kardeşi olarak çizilir, bu yüzden fan dönerken sabit kalır.
+  _updateFilterRing(d) {
+    const power = this._els?.power;
+    if (!power) return;
+    const pct = d.filterLife;
+    const visible =
+      this.filterRing !== "off" &&
+      pct !== null &&
+      pct !== undefined &&
+      (this.filterRing !== "low" || pct <= 20);
+
+    if (!visible) {
+      if (this._ring) this._ring.style.display = "none";
+      return;
+    }
+    if (!this._ring || !power.contains(this._ring)) {
+      power.style.position = "relative";
+      const R = 17;
+      const wrap = document.createElement("div");
+      wrap.className = "xap-filter-ring";
+      wrap.style.cssText =
+        "position:absolute; inset:-1px; pointer-events:none; z-index:2;";
+      wrap.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 38 38" style="display:block; overflow:visible;">
+        <circle cx="19" cy="19" r="${R}" fill="none" stroke="rgba(var(--rgb-secondary-text-color), 0.2)" stroke-width="2"/>
+        <circle class="xap-ring-arc" cx="19" cy="19" r="${R}" fill="none" stroke-width="2" stroke-linecap="round" transform="rotate(-90 19 19)" style="transition: stroke-dasharray .4s ease, stroke .4s ease;"/>
+      </svg>`;
+      power.appendChild(wrap);
+      this._ring = wrap;
+      this._ringArc = wrap.querySelector(".xap-ring-arc");
+    }
+    const C = 2 * Math.PI * 17;
+    this._ring.style.display = "";
+    this._ringArc.setAttribute("stroke-dasharray", `${(C * pct) / 100} ${C}`);
+    this._ringArc.setAttribute("stroke", this._filterColor(pct));
+  }
+
+  // ---------------------------------------------------------------------
+  // Detay ve mod pencereleri
+  // ---------------------------------------------------------------------
+  _esc(v) {
+    return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  _stepLabel(step) {
+    if (step.level) return `${step.presetMode ? step.presetMode + " " : ""}${step.level}`;
+    return (step.presetMode || step.label || "?").toString();
+  }
+
+  _openPopup(kind) {
+    if (this._isPreview || !this._hass) return;
+    this._closePopup();
+    const ov = document.createElement("div");
+    ov.style.cssText =
+      "position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif);";
+    const panel = document.createElement("div");
+    panel.style.cssText =
+      "background:var(--card-background-color, #1c1c1c); color:var(--primary-text-color, #e1e1e1); border-radius:var(--ha-card-border-radius, 12px); padding:16px; width:min(340px, 100%); max-height:85vh; overflow:auto; box-sizing:border-box; box-shadow:0 8px 32px rgba(0,0,0,0.4);";
+    ov.appendChild(panel);
+    ov.addEventListener("pointerdown", (e) => {
+      if (e.target === ov) this._closePopup();
+    });
+    panel.addEventListener("click", (e) => this._popupClick(e));
+    panel.addEventListener("change", (e) => this._popupChange(e));
+    this._popupKeyHandler = (e) => {
+      if (e.key === "Escape") this._closePopup();
+    };
+    document.addEventListener("keydown", this._popupKeyHandler);
+    document.body.appendChild(ov);
+    this._popup = { ov, panel, kind };
+    this._renderPopup();
+  }
+
+  _closePopup() {
+    if (!this._popup) return;
+    this._popup.ov.remove();
+    this._popup = null;
+    document.removeEventListener("keydown", this._popupKeyHandler);
+  }
+
+  _refreshPopup() {
+    if (!this._popup) return;
+    // Kullanıcı kaydırıcıyı sürüklerken yeniden çizip bozma.
+    if (this._popup.panel.contains(document.activeElement) &&
+        document.activeElement?.tagName === "INPUT") return;
+    this._renderPopup();
+  }
+
+  _sensorRow(label, entityId, fallbackUnit) {
+    if (!entityId) return null;
+    const st = this._hass.states[entityId];
+    if (!st || st.state === "unavailable" || st.state === "unknown") return null;
+    const unit = st.attributes?.unit_of_measurement || fallbackUnit || "";
+    return { label, value: `${st.state}${unit ? " " + unit : ""}` };
+  }
+
+  _renderPopup() {
+    const p = this._popup;
+    if (!p) return;
+    const fan = this._hass.states[this.entity];
+    if (!fan) return;
+    const attrs = fan.attributes || {};
+    const steps = this._getModeSteps(attrs);
+    const activeIdx = this._getCurrentStepIndex(steps, attrs);
+    const name = attrs.friendly_name || this.entity;
+
+    const chip = (act, data, label, active) => `<button data-act="${act}" ${data} style="
+        cursor:pointer; border:1px solid ${active ? "var(--primary-color, #03a9f4)" : "var(--divider-color, rgba(255,255,255,.12))"};
+        background:${active ? "color-mix(in srgb, var(--primary-color, #03a9f4) 18%, transparent)" : "transparent"};
+        color:var(--primary-text-color); border-radius:16px; padding:6px 12px; font:inherit; font-size:13px;">${this._esc(label)}</button>`;
+    const section = (title, body) =>
+      `<div style="margin-top:14px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px;">${this._esc(title)}</div>${body}</div>`;
+
+    let body = "";
+    if (p.kind === "modes") {
+      body = `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;">${steps
+        .map((st, i) => chip("step", `data-i="${i}"`, this._stepLabel(st), i === activeIdx))
+        .join("")}</div>`;
+    } else {
+      const pm = this._readValue(this.pm25Entity, attrs.pm25 || attrs.aqi || attrs.air_quality, "µg/m³");
+      const t = this._readValue(this.temperatureEntity, attrs.temperature ?? attrs.temp, "°C");
+      const h = this._readValue(this.humidityEntity, attrs.humidity, "%");
+      const rows = [
+        pm.value !== "--" && { label: "PM2.5", value: `${pm.value} ${pm.unit}` },
+        this._sensorRow("PM10", this.pm10Entity, "µg/m³"),
+        this._sensorRow("CO₂", this.co2Entity, "ppm"),
+        this._sensorRow("TVOC", this.tvocEntity, ""),
+        t.value !== "--" && { label: this._s("temperature"), value: `${t.value}${t.unit}` },
+        h.value !== "--" && { label: this._s("humidity"), value: `${h.value}${h.unit}` },
+      ].filter(Boolean);
+      const life = this._getFilterLife(attrs);
+      body += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">${rows
+        .map((r) => `<div><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:16px; font-weight:500;">${this._esc(r.value)}</div></div>`)
+        .join("")}</div>`;
+      if (life !== null) {
+        body += section(
+          `${this._s("filter")} · ${Math.round(life)}%`,
+          `<div style="height:6px; border-radius:3px; background:rgba(var(--rgb-secondary-text-color), 0.2); overflow:hidden;"><div style="height:100%; width:${life}%; background:${this._filterColor(life)};"></div></div>`
+        );
+      }
+      if (typeof attrs.percentage === "number") {
+        const stepSize = attrs.percentage_step > 0 ? attrs.percentage_step : 1;
+        body += section(
+          `${this._s("speed")} · ${Math.round(attrs.percentage)}%`,
+          `<input data-act="speed" type="range" min="0" max="100" step="${stepSize}" value="${attrs.percentage}" style="width:100%;">`
+        );
+      }
+      if (steps.length) {
+        body += section(
+          this._s("mode"),
+          `<div style="display:flex; flex-wrap:wrap; gap:8px;">${steps
+            .map((st, i) => chip("step", `data-i="${i}"`, this._stepLabel(st), i === activeIdx))
+            .join("")}</div>`
+        );
+      }
+      if (this.timerEntity) {
+        const tst = this._hass.states[this.timerEntity];
+        const cur = Number(tst?.state);
+        body += section(
+          this._s("timer"),
+          `<div style="display:flex; flex-wrap:wrap; gap:8px;">${[0, 30, 60, 120, 240]
+            .map((m) => chip("timer", `data-v="${m}"`, m === 0 ? this._s("timer_off") : m < 60 ? `${m} min` : `${m / 60} h`, cur === m))
+            .join("")}</div>`
+        );
+      }
+      if (this.controls.length) {
+        body += section(
+          this._s("controls"),
+          `<div style="display:flex; flex-wrap:wrap; gap:8px;">${this.controls
+            .map((eid) => {
+              const st = this._hass.states[eid];
+              if (!st) return "";
+              const on = st.state === "on" || st.state === "locked";
+              return chip("control", `data-e="${this._esc(eid)}"`, st.attributes?.friendly_name || eid, on);
+            })
+            .join("")}</div>`
+        );
+      }
+    }
+
+    p.panel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="font-size:16px; font-weight:500;">${this._esc(name)}</div>
+        <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:20px; line-height:1;">×</button>
+      </div>${body}`;
+  }
+
+  _popupClick(e) {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "close") return this._closePopup();
+    if (act === "step") {
+      const attrs = this._hass.states[this.entity]?.attributes || {};
+      const steps = this._getModeSteps(attrs);
+      const i = Number(btn.dataset.i);
+      if (steps[i]) this._applyStep(steps[i], i);
+      if (this._popup?.kind === "modes") this._closePopup();
+    } else if (act === "timer") {
+      const domain = this.timerEntity.split(".")[0];
+      this._hass.callService(domain, "set_value", {
+        entity_id: this.timerEntity,
+        value: Number(btn.dataset.v),
+      });
+    } else if (act === "control") {
+      const eid = btn.dataset.e;
+      const domain = eid.split(".")[0];
+      if (domain === "lock") {
+        const locked = this._hass.states[eid]?.state === "locked";
+        this._hass.callService("lock", locked ? "unlock" : "lock", { entity_id: eid });
+      } else {
+        this._hass.callService("homeassistant", "toggle", { entity_id: eid });
+      }
+    }
+  }
+
+  _popupChange(e) {
+    const el = e.target;
+    if (el?.dataset?.act === "speed") {
+      this._hass.callService("fan", "set_percentage", {
+        entity_id: this.entity,
+        percentage: Number(el.value),
+      });
+    }
   }
 
   _openMoreInfo(entityId) {
@@ -1502,6 +1853,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._closePopup();
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -1587,6 +1939,19 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       "Temperature sensor": { tr: "Sıcaklık sensörü" },
       "Humidity sensor": { tr: "Nem sensörü" },
       "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)" },
+      Extras: { tr: "Ek özellikler" },
+      "Filter life sensor": { tr: "Filtre ömrü sensörü" },
+      "PM10 sensor": { tr: "PM10 sensörü" },
+      "CO2 sensor": { tr: "CO₂ sensörü" },
+      "TVOC sensor": { tr: "TVOC sensörü" },
+      "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)" },
+      "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)" },
+      "Filter ring": { tr: "Filtre halkası" },
+      "Always": { tr: "Her zaman" },
+      "Only when low": { tr: "Sadece düşükken" },
+      "Hidden": { tr: "Gizli" },
+      "Show air quality label": { tr: "Hava kalitesi etiketini göster" },
+      "Dust particles animation": { tr: "Toz parçacığı animasyonu" },
     };
   }
 
@@ -1717,6 +2082,42 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
             name: "offline_entity",
             selector: { entity: {} },
           },
+        ],
+      },
+
+      // EK ÖZELLİKLER paneli — filtre halkası, detay penceresindeki ek
+      // sensörler, zamanlayıcı ve ek kontroller.
+      {
+        type: "expandable",
+        name: "",
+        title: this._t(null, "Extras"),
+        iconPath:
+          "M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z",
+        schema: [
+          { name: "filter_life_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "pm10_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "co2_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "tvoc_entity", selector: { entity: { domain: ["sensor"] } } },
+          { name: "timer_entity", selector: { entity: { domain: ["number", "input_number"] } } },
+          {
+            name: "controls",
+            selector: { entity: { multiple: true, domain: ["switch", "input_boolean", "lock"] } },
+          },
+          {
+            name: "filter_ring",
+            selector: {
+              select: {
+                mode: "dropdown",
+                options: [
+                  { value: "always", label: this._t(null, "Always") },
+                  { value: "low", label: this._t(null, "Only when low") },
+                  { value: "off", label: this._t(null, "Hidden") },
+                ],
+              },
+            },
+          },
+          { name: "air_quality_label", selector: { boolean: {} } },
+          { name: "particles", selector: { boolean: {} } },
         ],
       },
 
@@ -1864,6 +2265,24 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       }
       case "offline_entity":
         return this._t(null, "Connectivity sensor");
+      case "filter_life_entity":
+        return this._t(null, "Filter life sensor");
+      case "pm10_entity":
+        return this._t(null, "PM10 sensor");
+      case "co2_entity":
+        return this._t(null, "CO2 sensor");
+      case "tvoc_entity":
+        return this._t(null, "TVOC sensor");
+      case "timer_entity":
+        return this._t(null, "Timer (number, minutes)");
+      case "controls":
+        return this._t(null, "Extra controls (child lock, LED, buzzer...)");
+      case "filter_ring":
+        return this._t(null, "Filter ring");
+      case "air_quality_label":
+        return this._t(null, "Show air quality label");
+      case "particles":
+        return this._t(null, "Dust particles animation");
       case "layout":
         return this._t(
           "ui.panel.lovelace.editor.card.tile.content_layout",
@@ -1927,6 +2346,8 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     if (!data.layout) {
       data.layout = "horizontal";
     }
+    if (!data.filter_ring) data.filter_ring = "always";
+    if (data.particles === undefined) data.particles = true;
 
     this._haForm.hass = this._hass;
     this._haForm.schema = this._schema();
@@ -1992,6 +2413,11 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     }
     // layout: horizontal varsayılan olduğu için config'e yazmaya gerek yok.
     if (incoming.layout === "horizontal") delete incoming.layout;
+    if (incoming.filter_ring === "always") delete incoming.filter_ring;
+    if (incoming.particles === true) delete incoming.particles;
+    if (incoming.air_quality_label === false) delete incoming.air_quality_label;
+    if (Array.isArray(incoming.controls) && !incoming.controls.length)
+      delete incoming.controls;
 
     this._config = incoming;
     this.dispatchEvent(
