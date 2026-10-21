@@ -1663,12 +1663,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
       "position:fixed; inset:0; z-index:9999; font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif);";
     const panel = document.createElement("div");
     panel.style.cssText =
-      "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
-    if (!document.getElementById("xap-pop-style")) {
+      "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; scrollbar-width:thin; scrollbar-color:rgba(var(--rgb-secondary-text-color, 155,155,155), 0.4) transparent; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
+    if (!document.getElementById("xap-pop-style2")) {
       const st = document.createElement("style");
-      st.id = "xap-pop-style";
+      st.id = "xap-pop-style2";
       st.textContent =
-        "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}";
+        "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
+        "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0)}to{clip-path:inset(0)}}" +
+        "@keyframes xap-grow-down{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}";
       document.head.appendChild(st);
     }
     ov.appendChild(panel);
@@ -1697,25 +1699,85 @@ class XiaomiAirPurifierCard extends HTMLElement {
   _positionPopup() {
     const p = this._popup;
     if (!p) return;
-    const rect = this.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const width = Math.min(Math.max(rect.width, 300), 380, vw - 16);
-    const left = Math.max(8, Math.min(rect.left, vw - width - 8));
+    if (p.kind === "modes") {
+      // Seçili satır mod butonunun tam üstüne gelecek şekilde açılır.
+      const btn = (this._els?.modeBtn || this).getBoundingClientRect();
+      p.panel.style.width = "auto";
+      p.panel.style.maxHeight = `${vh - 16}px`;
+      const w = p.panel.offsetWidth;
+      const h = Math.min(p.panel.scrollHeight + 2, vh - 16);
+      const left = Math.max(8, Math.min(btn.left - 1, vw - w - 8));
+      const top = Math.max(8, Math.min(btn.top - (p._activeIdx || 0) * 50 - 1, vh - h - 8));
+      p.panel.style.left = `${left}px`;
+      p.panel.style.top = `${top}px`;
+      return;
+    }
+    // Kartın kendisi uzuyormuş gibi: aynı genişlik, aynı zemin/çerçeve,
+    // kartla arasında dikiş yok. Yukarıda yer varsa yukarı, yoksa aşağı
+    // doğru açılır.
+    const card = this._els?.card;
+    const rect = (card || this).getBoundingClientRect();
+    if (p._radius === undefined) {
+      p._radius = (card && getComputedStyle(card).borderTopLeftRadius) || "12px";
+    }
+    const R = p._radius;
+    const width = Math.min(Math.max(rect.width, 240), vw);
+    const left = Math.max(0, Math.min(rect.left, vw - width));
     p.panel.style.width = `${width}px`;
     p.panel.style.left = `${left}px`;
-    p.panel.style.maxHeight = `${vh - 16}px`;
-    // Alt kenar kartın alt kenarında; içerik yukarı uzar. Yukarıda yer
-    // yoksa (kart sayfanın en üstündeyse) ekrana sığacak şekilde aşağı kayar.
-    const h = Math.min(p.panel.scrollHeight + 2, vh - 16);
-    const top = Math.max(8, Math.min(rect.bottom - h, vh - h - 8));
-    p.panel.style.top = `${top}px`;
+    p.panel.style.boxShadow = "none";
+    // İçeriğin gerçek yüksekliğine göre yön: sığan yöne aç, ikisine de
+    // sığmıyorsa geniş olan yöne açıp içeride kaydır.
+    p.panel.style.maxHeight = "none";
+    const natural = p.panel.scrollHeight + 1;
+    const spaceUp = rect.top - 4;
+    const spaceDown = vh - rect.bottom - 4;
+    const up =
+      natural <= spaceUp ? true : natural <= spaceDown ? false : spaceUp >= spaceDown;
+    if (up) {
+      p.panel.style.top = "auto";
+      p.panel.style.bottom = `${vh - rect.top}px`;
+      p.panel.style.maxHeight = `${Math.max(120, rect.top - 4)}px`;
+      p.panel.style.borderRadius = `${R} ${R} 0 0`;
+      p.panel.style.borderBottomWidth = "0";
+      p.panel.style.transformOrigin = "bottom center";
+    } else {
+      p.panel.style.bottom = "auto";
+      p.panel.style.top = `${rect.bottom}px`;
+      p.panel.style.maxHeight = `${Math.max(120, vh - rect.bottom - 4)}px`;
+      p.panel.style.borderRadius = `0 0 ${R} ${R}`;
+      p.panel.style.borderTopWidth = "0";
+      p.panel.style.transformOrigin = "top center";
+    }
+    if (card) {
+      card.style.borderTopLeftRadius = up ? "0" : "";
+      card.style.borderTopRightRadius = up ? "0" : "";
+      card.style.borderBottomLeftRadius = up ? "" : "0";
+      card.style.borderBottomRightRadius = up ? "" : "0";
+      card.style.borderTopColor = up ? "transparent" : "";
+      card.style.borderBottomColor = up ? "" : "transparent";
+    }
+    if (!p._animSet) {
+      p._animSet = true;
+      p.panel.style.animation = `${up ? "xap-grow-up" : "xap-grow-down"} .2s ease-out`;
+    }
   }
 
   _closePopup() {
     if (!this._popup) return;
     this._popup.ov.remove();
     this._popup = null;
+    const c = this._els?.card;
+    if (c) {
+      c.style.borderTopLeftRadius = "";
+      c.style.borderTopRightRadius = "";
+      c.style.borderBottomLeftRadius = "";
+      c.style.borderBottomRightRadius = "";
+      c.style.borderTopColor = "";
+      c.style.borderBottomColor = "";
+    }
     document.removeEventListener("keydown", this._popupKeyHandler);
     window.removeEventListener("resize", this._popupReposition);
     window.removeEventListener("scroll", this._popupReposition, true);
@@ -1771,7 +1833,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     // HA'nın ikonlu seçim butonları: kare, yuvarlak köşe, seçili olan
     // dolu primary renk.
     const tile = (act, data, icon, label, active) => `<button data-act="${act}" ${data} title="${this._esc(label)}" style="
-        cursor:pointer; border:none; border-radius:12px; width:60px; height:60px; padding:0;
+        cursor:pointer; border:none; border-radius:18px; width:64px; height:60px; padding:0;
         display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
         background:${active ? ACTIVE : IDLE_BG}; color:${active ? "#fff" : "var(--secondary-text-color)"}; font:inherit;">
         <ha-icon icon="${icon}" style="--mdc-icon-size:24px; display:flex;"></ha-icon>
@@ -1779,20 +1841,46 @@ class XiaomiAirPurifierCard extends HTMLElement {
       </button>`;
     // HA'nın ha-control-select görünümü: tek parça yuvarlak çubuk içinde
     // eşit genişlikte metin seçenekleri.
-    const segmented = (act, items) => `<div style="display:flex; background:${IDLE_BG}; border-radius:12px; padding:4px; gap:4px;">${items
+    const segmented = (act, items) => `<div style="display:flex; background:var(--slider-secondary-color, rgba(var(--rgb-secondary-text-color, 155,155,155), 0.2)); border-radius:25px; padding:4px; gap:2px;">${items
       .map(([dataAttr, label, active]) => `<button data-act="${act}" ${dataAttr} style="
-        flex:1; cursor:pointer; border:none; border-radius:9px; padding:9px 4px; font:inherit; font-size:13px; font-weight:500;
-        background:${active ? ACTIVE : "transparent"}; color:${active ? "#fff" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
+        flex:1; cursor:pointer; border:none; border-radius:21px; padding:10px 4px; font:inherit; font-size:13px; font-weight:500; white-space:nowrap;
+        background:${active ? "var(--slider-color, var(--primary-color, #03a9f4))" : "transparent"}; color:${active ? "var(--text-primary-color, #fff)" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
       .join("")}</div>`;
     const section = (title, body) =>
-      `<div style="margin-top:16px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:8px;">${this._esc(title)}</div>${body}</div>`;
-    const tiles = () => `<div style="display:flex; flex-wrap:wrap; gap:8px;">${steps
-      .map((st, i) => tile("step", `data-i="${i}"`, this._stepIcon(st), this._stepLabel(st), i === activeIdx))
+      `<div style="margin-top:12px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px;">${this._esc(title)}</div>${body}</div>`;
+    // xiaomi-vacuum-map-card'ın mod seçiminden uyarlanan iki görünüm:
+    // 1) pillRow: hap biçimli kapta 50px yuvarlak ikon butonları, seçili
+    //    olan dolu. 2) dropdownList: dikey liste, satırda 50px ikon +
+    //    mod adı, seçili satır tam genişlikte dolu hap.
+    const BIG = "25px";
+    const PRIMARY = "var(--slider-color, var(--primary-color, #03a9f4))";
+    const SECONDARY = "var(--slider-secondary-color, rgba(var(--rgb-secondary-text-color, 155,155,155), 0.2))";
+    const ON_PRIMARY = "var(--text-primary-color, #fff)";
+    const pillRow = () => `<div style="display:flex; flex-wrap:wrap; justify-content:center; border-radius:${BIG}; overflow:hidden; background:${SECONDARY};">${steps
+      .map((st, i) => `<button data-act="step" data-i="${i}" title="${this._esc(this._stepLabel(st))}" style="
+          cursor:pointer; border:none; padding:0; width:50px; height:50px; display:flex; align-items:center; justify-content:center;
+          border-radius:${BIG}; background:${i === activeIdx ? PRIMARY : "transparent"}; color:${i === activeIdx ? ON_PRIMARY : "var(--primary-text-color)"};">
+          <ha-icon icon="${this._stepIcon(st)}" style="--mdc-icon-size:24px; display:flex;"></ha-icon></button>`)
       .join("")}</div>`;
+    const dropdownList = () => `<div style="display:flex; flex-direction:column;">${steps
+      .map((st, i) => {
+        const sel = i === activeIdx;
+        const first = i === 0;
+        const last = i === steps.length - 1;
+        const cellRadius = sel ? `${BIG} 0 0 ${BIG}` : `${first ? BIG : "0"} ${first ? BIG : "0"} ${last ? BIG : "0"} ${last ? BIG : "0"}`;
+        return `<button data-act="step" data-i="${i}" style="
+            cursor:pointer; border:none; padding:0; display:flex; align-items:center; text-align:left; font:inherit; height:50px;
+            border-radius:${sel ? BIG : "0"}; background:${sel ? PRIMARY : "transparent"}; color:${sel ? ON_PRIMARY : "var(--primary-text-color)"};">
+            <span style="width:50px; height:50px; flex:none; display:flex; align-items:center; justify-content:center; border-radius:${cellRadius}; background:${sel ? PRIMARY : SECONDARY};">
+              <ha-icon icon="${this._stepIcon(st)}" style="--mdc-icon-size:24px; display:flex;"></ha-icon></span>
+            <span style="padding:0 18px 0 10px; white-space:nowrap;">${this._esc(this._stepLabel(st))}</span></button>`;
+      })
+      .join("")}</div>`;
+    const activeLabel = activeIdx >= 0 && steps[activeIdx] ? this._stepLabel(steps[activeIdx]) : "";
 
     let body = "";
     if (p.kind === "modes") {
-      body = `<div style="margin-top:14px;">${tiles()}</div>`;
+      body = dropdownList();
     } else {
       const pm = this._readValue(this.pm25Entity, attrs.pm25 || attrs.aqi || attrs.air_quality, "µg/m³");
       const t = this._readValue(this.temperatureEntity, attrs.temperature ?? attrs.temp, "°C");
@@ -1807,7 +1895,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       ].filter(Boolean);
       const life = this._getFilterLife(attrs);
       body += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;">${rows
-        .map((r) => `<div><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:18px; font-weight:500; ${r.color ? `color:${r.color};` : ""}">${this._esc(r.value)}</div></div>`)
+        .map((r) => `<div><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:17px; font-weight:500; white-space:nowrap; ${r.color ? `color:${r.color};` : ""}">${this._esc(r.value)}</div></div>`)
         .join("")}</div>`;
       if (life !== null) {
         body += section(
@@ -1823,13 +1911,15 @@ class XiaomiAirPurifierCard extends HTMLElement {
         body += section(
           `${this._s("speed")} · ${val}%`,
           `<div data-act="slider" data-step="${stepSize}" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${val}"
-              style="position:relative; height:48px; border-radius:12px; background:color-mix(in srgb, ${ACTIVE} 20%, transparent); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
-              <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:${ACTIVE};"></div>
+              style="position:relative; height:44px; border-radius:22px; background:var(--slider-secondary-color, color-mix(in srgb, ${ACTIVE} 20%, transparent)); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
+              <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:var(--slider-color, ${ACTIVE}); border-radius:22px 0 0 22px;"></div>
               <div class="xap-slider-handle" style="position:absolute; top:50%; left:calc(${val}% - 10px); width:4px; height:24px; margin-top:-12px; border-radius:2px; background:#fff; ${val <= 0 ? "display:none;" : ""}"></div>
            </div>`
         );
       }
-      if (steps.length) body += section(this._s("mode"), tiles());
+      if (steps.length) {
+        body += section(`${this._s("mode")}${activeLabel ? " · " + activeLabel : ""}`, pillRow());
+      }
       if (this.timerEntity) {
         const cur = Number(this._hass.states[this.timerEntity]?.state);
         body += section(
@@ -1838,7 +1928,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
             "timer",
             [0, 30, 60, 120, 240].map((m) => [
               `data-v="${m}"`,
-              m === 0 ? this._s("timer_off") : m < 60 ? `${m} min` : `${m / 60} h`,
+              m === 0 ? this._s("timer_off") : m < 60 ? `${m}m` : `${m / 60}h`,
               cur === m,
             ])
           )
@@ -1863,10 +1953,19 @@ class XiaomiAirPurifierCard extends HTMLElement {
       }
     }
 
-    p.panel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
+    if (p.kind === "modes") {
+      p.panel.style.padding = "0";
+      p.panel.style.borderRadius = "25px";
+      p.panel.innerHTML = body;
+      p._activeIdx = Math.max(0, activeIdx);
+    } else {
+      p.panel.style.padding = "16px";
+      p.panel.style.borderRadius = "var(--ha-card-border-radius, 12px)";
+      p.panel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between;">
         <div style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
         <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:22px; line-height:1;">×</button>
       </div>${body}`;
+    }
     this._positionPopup();
   }
 
