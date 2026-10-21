@@ -1704,28 +1704,34 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!card) return;
     const cs = getComputedStyle(card);
     const st = p.panel.style;
-    if (p.kind === "modes") {
-      // Düğmenin üstüne biner, saydam olmamalı: kartın zemini (renk +
-      // varsa gradyan) opak bir tabanın üstüne katman olarak konur.
-      const layers = [];
-      if (cs.backgroundImage && cs.backgroundImage !== "none") layers.push(cs.backgroundImage);
-      layers.push(`linear-gradient(${cs.backgroundColor}, ${cs.backgroundColor})`);
-      layers.push("linear-gradient(var(--card-background-color, #1c1c1c), var(--card-background-color, #1c1c1c))");
-      st.background = layers.join(", ");
-      st.borderStyle = cs.borderLeftStyle;
-      st.borderColor = cs.borderLeftColor;
-      st.borderWidth = cs.borderLeftWidth;
-    } else {
-      st.backgroundColor = cs.backgroundColor;
-      st.backgroundImage = cs.backgroundImage;
-      st.backdropFilter = cs.backdropFilter;
-      st.webkitBackdropFilter = cs.webkitBackdropFilter || cs.backdropFilter;
-      st.borderStyle = cs.borderLeftStyle;
-      st.borderColor = cs.borderLeftColor;
-      st.borderWidth = cs.borderLeftWidth;
+
+    // Kartın zemini yarı saydamsa (cam efektli temalar) pencere arkasındaki
+    // kartlar görünür ve yazılar iç içe girer. Aynı rengi neredeyse opak
+    // yapıp arkayı bulanıklaştırıyoruz; kart da pencere açıkken aynı zemini
+    // alır, böylece ikisi tek parça görünür.
+    if (p._surface === undefined) {
+      const m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor || "");
+      const parts = m ? m[1].split(/[\s,\/]+/).filter(Boolean).map(Number) : [];
+      const alpha = parts.length > 3 ? parts[3] : 1;
+      p._surface =
+        parts.length >= 3 && !parts.slice(0, 3).some(Number.isNaN)
+          ? `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(alpha, 0.92)})`
+          : "var(--card-background-color, #1c1c1c)";
+      p._blur = cs.backdropFilter && cs.backdropFilter !== "none" ? cs.backdropFilter : "blur(20px)";
     }
+    st.backgroundColor = p._surface;
+    st.backgroundImage = cs.backgroundImage && cs.backgroundImage !== "none" ? cs.backgroundImage : "none";
+    st.backdropFilter = p._blur;
+    st.webkitBackdropFilter = p._blur;
+    st.borderStyle = cs.borderLeftStyle;
+    st.borderColor = cs.borderLeftColor;
+    st.borderWidth = cs.borderLeftWidth;
     st.color = cs.color;
     st.fontFamily = cs.fontFamily;
+    if (p.kind !== "modes") {
+      card.style.backgroundColor = p._surface;
+      card.style.backdropFilter = p._blur;
+    }
   }
 
   _positionPopup() {
@@ -1756,7 +1762,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       p._radius = (card && getComputedStyle(card).borderTopLeftRadius) || "12px";
     }
     const R = p._radius;
-    const width = Math.min(Math.max(rect.width, 240), vw);
+    const width = Math.min(rect.width, vw);
     const left = Math.max(0, Math.min(rect.left, vw - width));
     p.panel.style.width = `${width}px`;
     p.panel.style.left = `${left}px`;
@@ -1810,6 +1816,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
       c.style.borderBottomRightRadius = "";
       c.style.borderTopColor = "";
       c.style.borderBottomColor = "";
+      c.style.backgroundColor = "";
+      c.style.backdropFilter = "";
     }
     document.removeEventListener("keydown", this._popupKeyHandler);
     window.removeEventListener("resize", this._popupReposition);
