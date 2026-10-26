@@ -57,6 +57,8 @@ What it shows (only what is available for your device):
 - A timer (`timer_entity`): Off / 30m / 1h / 2h / 4h, written to a `number` or `input_number` entity in minutes
 - Extra controls (`controls`): toggles for entities such as a child lock, LED or buzzer (`switch`, `input_boolean` or `lock`)
 
+Values and names are shortcuts to the entity behind them. Tap **PM2.5, PM10, CO₂, TVOC, temperature or humidity**, the **Filter**, **Fan speed**, **Mode** and **timer** titles, the **device name** at the top, or the **name of a control** to open that entity's details. The popup closes first, so the two windows never stack. When a value is read from the fan's own attributes (no separate sensor set), the fan entity opens. Tapping the control button itself still toggles it.
+
 The popup takes its background, border and text color from the card itself, so it matches your theme, including translucent "glass" styles. The dust particles keep flowing inside it, toward the fan.
 
 On a narrow card (for example the vertical layout in a 3-column section) the popup does not have to squeeze into the card's width. It opens as a 300 px panel that sits on the card in a "T" shape, with rounded joints where the two meet, above the card or below it, whichever has room:

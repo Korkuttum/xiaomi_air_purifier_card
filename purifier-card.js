@@ -1665,10 +1665,11 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const panel = document.createElement("div");
     panel.style.cssText =
       "position:fixed; box-sizing:border-box; overflow:auto; padding:16px; scrollbar-width:thin; scrollbar-color:rgba(var(--rgb-secondary-text-color, 155,155,155), 0.4) transparent; background:var(--ha-card-background, var(--card-background-color, #1c1c1c)); color:var(--primary-text-color, #e1e1e1); border:1px solid var(--divider-color, rgba(255,255,255,0.12)); border-radius:var(--ha-card-border-radius, 12px); box-shadow:0 8px 28px rgba(0,0,0,0.35); transform-origin:bottom center; animation:xap-pop-in .18s ease-out;";
-    if (!document.getElementById("xap-pop-style4")) {
+    if (!document.getElementById("xap-pop-style5")) {
       const st = document.createElement("style");
-      st.id = "xap-pop-style4";
+      st.id = "xap-pop-style5";
       st.textContent =
+        ".xap-link{cursor:pointer}.xap-link:hover{opacity:.75;text-decoration:underline}" +
         "@keyframes xap-fade{from{opacity:0}to{opacity:1}}" +
         "@keyframes xap-pop-in{from{opacity:0;transform:translateY(12px) scaleY(.9)}to{opacity:1;transform:none}}" +
         "@keyframes xap-grow-up{from{clip-path:inset(100% 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}to{clip-path:inset(0 0 0 0 round var(--xap-r,20px) var(--xap-r,20px) 0 0)}}" +
@@ -2083,7 +2084,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
     const st = this._hass.states[entityId];
     if (!st || st.state === "unavailable" || st.state === "unknown") return null;
     const unit = st.attributes?.unit_of_measurement || fallbackUnit || "";
-    return { label, value: `${st.state}${unit ? " " + unit : ""}` };
+    return { label, value: `${st.state}${unit ? " " + unit : ""}`, entity: entityId };
   }
 
   // Mod adımı için HA'nın kendi fan/preset ikon diline yakın MDI ikonu.
@@ -2120,12 +2121,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
 
     // HA'nın ikonlu seçim butonları: kare, yuvarlak köşe, seçili olan
     // dolu primary renk.
-    const tile = (act, data, icon, label, active) => `<button data-act="${act}" ${data} title="${this._esc(label)}" style="
+    const tile = (act, data, icon, label, active, labelEntity) => `<button data-act="${act}" ${data} title="${this._esc(label)}" style="
         cursor:pointer; border:none; border-radius:18px; width:64px; height:60px; padding:0;
         display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
         background:${active ? ACTIVE : IDLE_BG}; color:${active ? "#fff" : "var(--secondary-text-color)"}; font:inherit;">
         <ha-icon icon="${icon}" style="--mdc-icon-size:24px; display:flex;"></ha-icon>
-        <span style="font-size:10px; max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._esc(label)}</span>
+        <span ${labelEntity ? `class="xap-link" data-act="info" data-e="${this._esc(labelEntity)}"` : ""} style="font-size:10px; max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._esc(label)}</span>
       </button>`;
     // HA'nın ha-control-select görünümü: tek parça yuvarlak çubuk içinde
     // eşit genişlikte metin seçenekleri.
@@ -2134,8 +2135,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
         flex:1; cursor:pointer; border:none; border-radius:21px; padding:10px 4px; font:inherit; font-size:13px; font-weight:500; white-space:nowrap;
         background:${active ? "var(--primary-color, #03a9f4)" : "transparent"}; color:${active ? "var(--text-primary-color, #fff)" : "var(--primary-text-color)"};">${this._esc(label)}</button>`)
       .join("")}</div>`;
-    const section = (title, body) =>
-      `<div style="margin-top:12px;"><div style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px;">${this._esc(title)}</div>${body}</div>`;
+    const section = (title, body, entity) =>
+      `<div style="margin-top:12px;"><div ${entity ? `class="xap-link" data-act="info" data-e="${this._esc(entity)}"` : ""} style="font-size:12px; color:var(--secondary-text-color); margin-bottom:6px; ${entity ? "display:inline-block;" : ""}">${this._esc(title)}</div>${body}</div>`;
     // xiaomi-vacuum-map-card'ın mod seçiminden uyarlanan iki görünüm:
     // 1) pillRow: hap biçimli kapta 50px yuvarlak ikon butonları, seçili
     //    olan dolu. 2) dropdownList: dikey liste, satırda 50px ikon +
@@ -2174,21 +2175,22 @@ class XiaomiAirPurifierCard extends HTMLElement {
       const t = this._readValue(this.temperatureEntity, attrs.temperature ?? attrs.temp, "°C");
       const h = this._readValue(this.humidityEntity, attrs.humidity, "%");
       const rows = [
-        pm.value !== "--" && { label: "PM2.5", value: `${pm.value} ${pm.unit}`, color: this._getPMColor(pm.value) },
+        pm.value !== "--" && { label: "PM2.5", value: `${pm.value} ${pm.unit}`, color: this._getPMColor(pm.value), entity: this.pm25Entity || this.entity },
         this._sensorRow("PM10", this.pm10Entity, "µg/m³"),
         this._sensorRow("CO₂", this.co2Entity, "ppm"),
         this._sensorRow("TVOC", this.tvocEntity, ""),
-        t.value !== "--" && { label: this._s("temperature"), value: `${t.value}${t.unit}` },
-        h.value !== "--" && { label: this._s("humidity"), value: `${h.value}${h.unit}` },
+        t.value !== "--" && { label: this._s("temperature"), value: `${t.value}${t.unit}`, entity: this.temperatureEntity || this.entity },
+        h.value !== "--" && { label: this._s("humidity"), value: `${h.value}${h.unit}`, entity: this.humidityEntity || this.entity },
       ].filter(Boolean);
       const life = this._getFilterLife(attrs);
       body += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;">${rows
-        .map((r) => `<div><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:17px; font-weight:500; white-space:nowrap; ${r.color ? `color:${r.color};` : ""}">${this._esc(r.value)}</div></div>`)
+        .map((r) => `<div class="xap-link" data-act="info" data-e="${this._esc(r.entity)}"><div style="font-size:12px; color:var(--secondary-text-color);">${this._esc(r.label)}</div><div style="font-size:17px; font-weight:500; white-space:nowrap; ${r.color ? `color:${r.color};` : ""}">${this._esc(r.value)}</div></div>`)
         .join("")}</div>`;
       if (life !== null) {
         body += section(
           `${this._s("filter")} · ${Math.round(life)}%`,
-          `<div style="height:8px; border-radius:4px; background:${IDLE_BG}; overflow:hidden;"><div style="height:100%; width:${life}%; background:${this._filterColor(life)}; border-radius:4px;"></div></div>`
+          `<div style="height:8px; border-radius:4px; background:${IDLE_BG}; overflow:hidden;"><div style="height:100%; width:${life}%; background:${this._filterColor(life)}; border-radius:4px;"></div></div>`,
+          this.filterEntity || this.entity
         );
       }
       if (typeof attrs.percentage === "number") {
@@ -2202,11 +2204,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
               style="position:relative; height:44px; border-radius:22px; background:color-mix(in srgb, ${ACTIVE} 20%, transparent); overflow:hidden; cursor:pointer; touch-action:none; outline:none;">
               <div class="xap-slider-fill" style="position:absolute; inset:0 auto 0 0; width:${val}%; background:${ACTIVE}; border-radius:22px 0 0 22px;"></div>
               <div class="xap-slider-handle" style="position:absolute; top:50%; left:calc(${val}% - 10px); width:4px; height:24px; margin-top:-12px; border-radius:2px; background:#fff; ${val <= 0 ? "display:none;" : ""}"></div>
-           </div>`
+           </div>`,
+          this.entity
         );
       }
       if (steps.length) {
-        body += section(`${this._s("mode")}${activeLabel ? " · " + activeLabel : ""}`, pillRow());
+        body += section(`${this._s("mode")}${activeLabel ? " · " + activeLabel : ""}`, pillRow(), this.entity);
       }
       if (this.timerEntity) {
         const cur = Number(this._hass.states[this.timerEntity]?.state);
@@ -2219,7 +2222,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
               m === 0 ? this._s("timer_off") : m < 60 ? `${m}m` : `${m / 60}h`,
               cur === m,
             ])
-          )
+          ),
+          this.timerEntity
         );
       }
       if (this.controls.length) {
@@ -2234,7 +2238,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
               const icon =
                 st.attributes?.icon ||
                 (isLock ? (on ? "mdi:lock" : "mdi:lock-open-variant") : on ? "mdi:toggle-switch" : "mdi:toggle-switch-off");
-              return tile("control", `data-e="${this._esc(eid)}"`, icon, st.attributes?.friendly_name || eid, on);
+              return tile("control", `data-e="${this._esc(eid)}"`, icon, st.attributes?.friendly_name || eid, on, eid);
             })
             .join("")}</div>`
         );
@@ -2253,7 +2257,7 @@ class XiaomiAirPurifierCard extends HTMLElement {
       p.panel.style.padding = "16px";
       p.panel.style.borderRadius = "var(--ha-card-border-radius, 12px)";
       const html = `<div style="display:flex; align-items:center; justify-content:space-between;">
-        <div style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
+        <div class="xap-link" data-act="info" data-e="${this._esc(this.entity)}" style="font-size:18px; font-weight:500;">${this._esc(name)}</div>
         <button data-act="close" style="cursor:pointer; border:none; background:transparent; color:var(--secondary-text-color); font-size:22px; line-height:1;">×</button>
       </div>${body}`;
       if (p._html !== html) {
@@ -2330,6 +2334,12 @@ class XiaomiAirPurifierCard extends HTMLElement {
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "close") return this._closePopup();
+    if (act === "info") {
+      const eid = btn.dataset.e;
+      this._closePopup();
+      if (eid) this._openMoreInfo(eid);
+      return;
+    }
     if (act === "step") {
       const attrs = this._hass.states[this.entity]?.attributes || {};
       const steps = this._getModeSteps(attrs);
