@@ -341,20 +341,20 @@ class XiaomiAirPurifierCard extends HTMLElement {
   // kalitesi etiketleri). Anahtar -> dil kodu -> metin; dil yoksa en.
   _strings() {
     return {
-      offline: { en: "Offline", tr: "Çevrimdışı", de: "Offline", fr: "Hors ligne", es: "Sin conexión" },
-      filter: { en: "Filter", tr: "Filtre", de: "Filter", fr: "Filtre", es: "Filtro" },
-      speed: { en: "Fan speed", tr: "Fan hızı", de: "Lüfterstufe", fr: "Vitesse", es: "Velocidad" },
-      mode: { en: "Mode", tr: "Mod", de: "Modus", fr: "Mode", es: "Modo" },
-      timer: { en: "Turn off in", tr: "Kapanma süresi", de: "Ausschalten in", fr: "Arrêt dans", es: "Apagar en" },
-      timer_off: { en: "Off", tr: "Kapalı", de: "Aus", fr: "Désactivé", es: "Apagado" },
-      controls: { en: "Controls", tr: "Kontroller", de: "Steuerung", fr: "Commandes", es: "Controles" },
-      temperature: { en: "Temperature", tr: "Sıcaklık", de: "Temperatur", fr: "Température", es: "Temperatura" },
-      humidity: { en: "Humidity", tr: "Nem", de: "Luftfeuchte", fr: "Humidité", es: "Humedad" },
-      aq0: { en: "Good", tr: "İyi", de: "Gut", fr: "Bon", es: "Buena" },
-      aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada" },
-      aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala" },
-      aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre" },
-      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa" },
+      offline: { en: "Offline", tr: "Çevrimdışı", de: "Offline", fr: "Hors ligne", es: "Sin conexión", sr: "Ван мреже", "sr-Latn": "Van mreže" },
+      filter: { en: "Filter", tr: "Filtre", de: "Filter", fr: "Filtre", es: "Filtro", sr: "Филтер", "sr-Latn": "Filter" },
+      speed: { en: "Fan speed", tr: "Fan hızı", de: "Lüfterstufe", fr: "Vitesse", es: "Velocidad", sr: "Брзина вентилатора", "sr-Latn": "Brzina ventilatora" },
+      mode: { en: "Mode", tr: "Mod", de: "Modus", fr: "Mode", es: "Modo", sr: "Режим", "sr-Latn": "Režim" },
+      timer: { en: "Turn off in", tr: "Kapanma süresi", de: "Ausschalten in", fr: "Arrêt dans", es: "Apagar en", sr: "Искључи за", "sr-Latn": "Isključi za" },
+      timer_off: { en: "Off", tr: "Kapalı", de: "Aus", fr: "Désactivé", es: "Apagado", sr: "Искључено", "sr-Latn": "Isključeno" },
+      controls: { en: "Controls", tr: "Kontroller", de: "Steuerung", fr: "Commandes", es: "Controles", sr: "Контроле", "sr-Latn": "Kontrole" },
+      temperature: { en: "Temperature", tr: "Sıcaklık", de: "Temperatur", fr: "Température", es: "Temperatura", sr: "Температура", "sr-Latn": "Temperatura" },
+      humidity: { en: "Humidity", tr: "Nem", de: "Luftfeuchte", fr: "Humidité", es: "Humedad", sr: "Влажност", "sr-Latn": "Vlažnost" },
+      aq0: { en: "Good", tr: "İyi", de: "Gut", fr: "Bon", es: "Buena", sr: "Одличан", "sr-Latn": "Odličan" },
+      aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada", sr: "Умерен", "sr-Latn": "Umeren" },
+      aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala", sr: "Лош", "sr-Latn": "Loš" },
+      aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre", sr: "Нездрав", "sr-Latn": "Nezdrav" },
+      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa"sr: "Опасан", "sr-Latn": "Opasan" },
     };
   }
 
@@ -2461,49 +2461,54 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
     // Anahtar = İngilizce fallback string. Değer = dile göre çeviri.
     // Yeni dil eklemek istersen her satıra yeni bir dil kodu ekle.
     return {
-      Sensors: { tr: "Sensörler", de: "Sensoren", fr: "Capteurs", es: "Sensores" },
-      Appearance: { tr: "Görünüm", de: "Darstellung", fr: "Apparence", es: "Apariencia" },
-      Interactions: { tr: "Etkileşimler", de: "Interaktionen", fr: "Interactions", es: "Interacciones" },
-      Icon: { tr: "İkon", de: "Symbol", fr: "Icône", es: "Icono" },
-      Card: { tr: "Kart", de: "Karte", fr: "Carte", es: "Tarjeta" },
-      "Content layout": { tr: "İçerik düzeni", de: "Inhaltslayout", fr: "Disposition du contenu", es: "Diseño del contenido" },
-      Horizontal: { tr: "Yatay", de: "Horizontal", fr: "Horizontal", es: "Horizontal" },
-      Vertical: { tr: "Dikey", de: "Vertikal", fr: "Vertical", es: "Vertical" },
-      "Tap behavior": { tr: "Dokunma davranışı", de: "Verhalten beim Tippen", fr: "Comportement au toucher", es: "Comportamiento al tocar" },
-      "Hold behavior": { tr: "Basılı tutma davranışı", de: "Verhalten beim Halten", fr: "Comportement au maintien", es: "Comportamiento al mantener" },
-      "Double tap behavior": { tr: "Çift dokunma davranışı", de: "Verhalten beim Doppeltippen", fr: "Comportement au double toucher", es: "Comportamiento al tocar dos veces" },
-      "PM2.5 sensor": { tr: "PM2.5 sensörü", de: "PM2.5-Sensor", fr: "Capteur PM2.5", es: "Sensor PM2.5" },
-      "Temperature sensor": { tr: "Sıcaklık sensörü", de: "Temperatursensor", fr: "Capteur de température", es: "Sensor de temperatura" },
-      "Humidity sensor": { tr: "Nem sensörü", de: "Feuchtigkeitssensor", fr: "Capteur d'humidité", es: "Sensor de humedad" },
-      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)", de: "Verbindungssensor (wird automatisch erkannt, zum Überschreiben)", fr: "Capteur de connectivité (détecté automatiquement, pour forcer)", es: "Sensor de conectividad (se detecta automáticamente, para anular)" },
-      Extras: { tr: "Ek özellikler", de: "Zusatzfunktionen", fr: "Extras", es: "Extras" },
-      "Filter life sensor": { tr: "Filtre ömrü sensörü", de: "Sensor Filterlebensdauer", fr: "Capteur de durée de vie du filtre", es: "Sensor de vida del filtro" },
-      "PM10 sensor": { tr: "PM10 sensörü", de: "PM10-Sensor", fr: "Capteur PM10", es: "Sensor PM10" },
-      "CO2 sensor": { tr: "CO₂ sensörü", de: "CO₂-Sensor", fr: "Capteur CO₂", es: "Sensor de CO₂" },
-      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC" },
-      "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)", de: "Timer (Zahl, Minuten)", fr: "Minuterie (nombre, minutes)", es: "Temporizador (número, minutos)" },
-      "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)", de: "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)", fr: "Commandes supplémentaires (verrou enfant, LED, buzzer...)", es: "Controles adicionales (bloqueo infantil, LED, zumbador...)" },
-      "Filter ring": { tr: "Filtre halkası", de: "Filterring", fr: "Anneau du filtre", es: "Anillo del filtro" },
-      Always: { tr: "Her zaman", de: "Immer", fr: "Toujours", es: "Siempre" },
-      "Only when low": { tr: "Sadece düşükken", de: "Nur bei niedrigem Stand", fr: "Seulement si faible", es: "Solo cuando es bajo" },
-      Hidden: { tr: "Gizli", de: "Ausgeblendet", fr: "Masqué", es: "Oculto" },
-      "Show air quality label": { tr: "Hava kalitesi etiketini göster", de: "Luftqualitätsbezeichnung anzeigen", fr: "Afficher le libellé de qualité d'air", es: "Mostrar etiqueta de calidad del aire" },
-      "Dust particles animation": { tr: "Toz parçacığı animasyonu", de: "Staubpartikel-Animation", fr: "Animation des particules de poussière", es: "Animación de partículas de polvo" },
-      "PM2.5 limit: green": { tr: "PM2.5 sınırı: yeşil (µg/m³)", de: "PM2.5-Grenze: Grün (µg/m³)", fr: "Limite PM2.5 : vert (µg/m³)", es: "Límite PM2.5: verde (µg/m³)" },
-      "PM2.5 limit: yellow": { tr: "PM2.5 sınırı: sarı (µg/m³)", de: "PM2.5-Grenze: Gelb (µg/m³)", fr: "Limite PM2.5 : jaune (µg/m³)", es: "Límite PM2.5: amarillo (µg/m³)" },
-      "PM2.5 limit: orange": { tr: "PM2.5 sınırı: turuncu (µg/m³)", de: "PM2.5-Grenze: Orange (µg/m³)", fr: "Limite PM2.5 : orange (µg/m³)", es: "Límite PM2.5: naranja (µg/m³)" },
-      "PM2.5 limit: red": { tr: "PM2.5 sınırı: kırmızı (µg/m³)", de: "PM2.5-Grenze: Rot (µg/m³)", fr: "Limite PM2.5 : rouge (µg/m³)", es: "Límite PM2.5: rojo (µg/m³)" },
+      Sensors: { tr: "Sensörler", de: "Sensoren", fr: "Capteurs", es: "Sensores", sr: "Сензори", "sr-Latn": "Senzori" },
+      Appearance: { tr: "Görünüm", de: "Darstellung", fr: "Apparence", es: "Apariencia", sr: "Изглед", "sr-Latn": "Izgled" },
+      Interactions: { tr: "Etkileşimler", de: "Interaktionen", fr: "Interactions", es: "Interacciones", sr: "Интеракције", "sr-Latn": "Interakcije" },
+      Icon: { tr: "İkon", de: "Symbol", fr: "Icône", es: "Icono", sr: "Икона", "sr-Latn": "Ikona" },
+      Card: { tr: "Kart", de: "Karte", fr: "Carte", es: "Tarjeta", sr: "Картица", "sr-Latn": "Kartica" },
+      "Content layout": { tr: "İçerik düzeni", de: "Inhaltslayout", fr: "Disposition du contenu", es: "Diseño del contenido", sr: "Распоред садржаја", "sr-Latn": "Raspored sadržaja" },
+      Horizontal: { tr: "Yatay", de: "Horizontal", fr: "Horizontal", es: "Horizontal", sr: "Хоризонтално", "sr-Latn": "Horizontalno" },
+      Vertical: { tr: "Dikey", de: "Vertikal", fr: "Vertical", es: "Vertical", sr: "Вертикално", "sr-Latn": "Vertikalno" },
+      "Tap behavior": { tr: "Dokunma davranışı", de: "Verhalten beim Tippen", fr: "Comportement au toucher", es: "Comportamiento al tocar", sr: "Понашање на додир", "sr-Latn": "Ponašanje na dodir" },
+      "Hold behavior": { tr: "Basılı tutma davranışı", de: "Verhalten beim Halten", fr: "Comportement au maintien", es: "Comportamiento al mantener", sr: "Понашање на дужи притисак", "sr-Latn": "Ponašanje na duži pritisak" },
+      "Double tap behavior": { tr: "Çift dokunma davranışı", de: "Verhalten beim Doppeltippen", fr: "Comportement au double toucher", es: "Comportamiento al tocar dos veces", sr: "Понашање на дупли додир", "sr-Latn": "Ponašanje na dupli dodir" },
+      "PM2.5 sensor": { tr: "PM2.5 sensörü", de: "PM2.5-Sensor", fr: "Capteur PM2.5", es: "Sensor PM2.5", sr: "PM2.5 сензор", "sr-Latn": "PM2.5 senzor" },
+      "Temperature sensor": { tr: "Sıcaklık sensörü", de: "Temperatursensor", fr: "Capteur de température", es: "Sensor de temperatura", sr: "Сензор температуре", "sr-Latn": "Senzor temperature" },
+      "Humidity sensor": { tr: "Nem sensörü", de: "Feuchtigkeitssensor", fr: "Capteur d'humidité", es: "Sensor de humedad", sr: "Сензор влажности", "sr-Latn": "Senzor vlažnosti" },
+      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)", de: "Verbindungssensor (wird automatisch erkannt, zum Überschreiben)", fr: "Capteur de connectivité (détecté automatiquement, pour forcer)", es: "Sensor de conectividad (se detecta automáticamente, para anular)", sr: "Сензор повезаности (аутоматски се детектује, за замену)", "sr-Latn": "Senzor povezanosti (automatski se detektuje, za zamenu)" },
+      Extras: { tr: "Ek özellikler", de: "Zusatzfunktionen", fr: "Extras", es: "Extras", sr: "Додаци", "sr-Latn": "Dodaci" },
+      "Filter life sensor": { tr: "Filtre ömrü sensörü", de: "Sensor Filterlebensdauer", fr: "Capteur de durée de vie du filtre", es: "Sensor de vida del filtro", sr: "Сензор века трајања филтера", "sr-Latn": "Senzor veka trajanja filtera" },
+      "PM10 sensor": { tr: "PM10 sensörü", de: "PM10-Sensor", fr: "Capteur PM10", es: "Sensor PM10", sr: "PM10 сензор", "sr-Latn": "PM10 senzor" },
+      "CO2 sensor": { tr: "CO₂ sensörü", de: "CO₂-Sensor", fr: "Capteur CO₂", es: "Sensor de CO₂", sr: "CO₂ сензор", "sr-Latn": "CO₂ senzor" },
+      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC"sr: "TVOC сензор", "sr-Latn": "TVOC senzor" },
+      "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)", de: "Timer (Zahl, Minuten)", fr: "Minuterie (nombre, minutes)", es: "Temporizador (número, minutos)", sr: "Тајмер (број, минути)", "sr-Latn": "Tajmer (broj, minuti)" },
+      "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)", de: "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)", fr: "Commandes supplémentaires (verrou enfant, LED, buzzer...)", es: "Controles adicionales (bloqueo infantil, LED, zumbador...)", sr: "Додатне контроле (заштита за децу, LED, зујалица...)", "sr-Latn": "Dodatne kontrole (zaštita za decu, LED, zujalica...)" },
+      "Filter ring": { tr: "Filtre halkası", de: "Filterring", fr: "Anneau du filtre", es: "Anillo del filtro", sr: "Прстен филтера", "sr-Latn": "Prsten filtera" },
+      Always: { tr: "Her zaman", de: "Immer", fr: "Toujours", es: "Siempre", sr: "Увек", "sr-Latn": "Uvek" },
+      "Only when low": { tr: "Sadece düşükken", de: "Nur bei niedrigem Stand", fr: "Seulement si faible", es: "Solo cuando es bajo", sr: "Само када је низак", "sr-Latn": "Samo kada je nizak" },
+      Hidden: { tr: "Gizli", de: "Ausgeblendet", fr: "Masqué", es: "Oculto", sr: "Скривено", "sr-Latn": "Skriveno" },
+      "Show air quality label": { tr: "Hava kalitesi etiketini göster", de: "Luftqualitätsbezeichnung anzeigen", fr: "Afficher le libellé de qualité d'air", es: "Mostrar etiqueta de calidad del aire", sr: "Прикажи ознаку квалитета ваздуха", "sr-Latn": "Prikaži oznaku kvaliteta vazduha" },
+      "Dust particles animation": { tr: "Toz parçacığı animasyonu", de: "Staubpartikel-Animation", fr: "Animation des particules de poussière", es: "Animación de partículas de polvo", sr: "Анимација честица прашине", "sr-Latn": "Animacija čestica prašine" },
+      "PM2.5 limit: green": { tr: "PM2.5 sınırı: yeşil (µg/m³)", de: "PM2.5-Grenze: Grün (µg/m³)", fr: "Limite PM2.5 : vert (µg/m³)", es: "Límite PM2.5: verde (µg/m³)", sr: "PM2.5 граница: зелено (µg/m³)", "sr-Latn": "PM2.5 granica: zeleno (µg/m³)" },
+      "PM2.5 limit: yellow": { tr: "PM2.5 sınırı: sarı (µg/m³)", de: "PM2.5-Grenze: Gelb (µg/m³)", fr: "Limite PM2.5 : jaune (µg/m³)", es: "Límite PM2.5: amarillo (µg/m³)", sr: "PM2.5 граница: жуто (µg/m³)", "sr-Latn": "PM2.5 granica: žuto (µg/m³)" },
+      "PM2.5 limit: orange": { tr: "PM2.5 sınırı: turuncu (µg/m³)", de: "PM2.5-Grenze: Orange (µg/m³)", fr: "Limite PM2.5 : orange (µg/m³)", es: "Límite PM2.5: naranja (µg/m³)", sr: "PM2.5 граница: наранџасто (µg/m³)", "sr-Latn": "PM2.5 granica: narandžasto (µg/m³)" },
+      "PM2.5 limit: red": { tr: "PM2.5 sınırı: kırmızı (µg/m³)", de: "PM2.5-Grenze: Rot (µg/m³)", fr: "Limite PM2.5 : rouge (µg/m³)", es: "Límite PM2.5: rojo (µg/m³)", sr: "PM2.5 граница: црвено (µg/m³)", "sr-Latn": "PM2.5 granica: crveno (µg/m³)" },
     };
   }
 
   _userLang() {
-    // hass.locale.language en güvenilir kaynak; eski sürümlerde
-    // hass.language. İlk iki harfini (örn. "tr-TR" -> "tr") al.
     const raw =
       this._hass?.locale?.language ||
       this._hass?.language ||
       "en";
-    return raw.toLowerCase().slice(0, 2);
+    
+    const lang = raw.toLowerCase();
+    // If the language starts with "sr-latn", return the full code for Latin script
+    if (lang.startsWith("sr-latn")) {
+      return "sr-Latn";
+    }
+    // For all other languages, take only the first two letters (e.g., "sr-cyrl" -> "sr", "tr-tr" -> "tr")
+    return lang.slice(0, 2);
   }
 
   _t(haKey, fallback) {
