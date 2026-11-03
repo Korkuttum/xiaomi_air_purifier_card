@@ -354,13 +354,14 @@ class XiaomiAirPurifierCard extends HTMLElement {
       aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada", sr: "Умерен", "sr-Latn": "Umeren" },
       aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala", sr: "Лош", "sr-Latn": "Loš" },
       aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre", sr: "Нездрав", "sr-Latn": "Nezdrav" },
-      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa"sr: "Опасан", "sr-Latn": "Opasan" },
+      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa", sr: "Опасан", "sr-Latn": "Opasan" },
     };
   }
 
   _s(key) {
     const raw = this._hass?.locale?.language || this._hass?.language || "en";
-    const lang = raw.toLowerCase().slice(0, 2);
+    const userLang = raw.toLowerCase();
+    const lang = userLang.startsWith("sr-latn") ? "sr-Latn" : userLang.slice(0, 2);
     const entry = this._strings()[key] || {};
     return entry[lang] || entry.en || key;
   }
@@ -2480,7 +2481,7 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
       "Filter life sensor": { tr: "Filtre ömrü sensörü", de: "Sensor Filterlebensdauer", fr: "Capteur de durée de vie du filtre", es: "Sensor de vida del filtro", sr: "Сензор века трајања филтера", "sr-Latn": "Senzor veka trajanja filtera" },
       "PM10 sensor": { tr: "PM10 sensörü", de: "PM10-Sensor", fr: "Capteur PM10", es: "Sensor PM10", sr: "PM10 сензор", "sr-Latn": "PM10 senzor" },
       "CO2 sensor": { tr: "CO₂ sensörü", de: "CO₂-Sensor", fr: "Capteur CO₂", es: "Sensor de CO₂", sr: "CO₂ сензор", "sr-Latn": "CO₂ senzor" },
-      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC"sr: "TVOC сензор", "sr-Latn": "TVOC senzor" },
+      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC", sr: "TVOC сензор", "sr-Latn": "TVOC senzor" },
       "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)", de: "Timer (Zahl, Minuten)", fr: "Minuterie (nombre, minutes)", es: "Temporizador (número, minutos)", sr: "Тајмер (број, минути)", "sr-Latn": "Tajmer (broj, minuti)" },
       "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)", de: "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)", fr: "Commandes supplémentaires (verrou enfant, LED, buzzer...)", es: "Controles adicionales (bloqueo infantil, LED, zumbador...)", sr: "Додатне контроле (заштита за децу, LED, зујалица...)", "sr-Latn": "Dodatne kontrole (zaštita za decu, LED, zujalica...)" },
       "Filter ring": { tr: "Filtre halkası", de: "Filterring", fr: "Anneau du filtre", es: "Anillo del filtro", sr: "Прстен филтера", "sr-Latn": "Prsten filtera" },
