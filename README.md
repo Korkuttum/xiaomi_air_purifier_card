@@ -22,7 +22,7 @@ A minimalist, single-row air purifier / fan card for Home Assistant. It packs po
 - **Air quality label**: Optional "Good / Moderate / Poor / Unhealthy / Hazardous" text under the PM2.5 value, with configurable thresholds
 - **Vertical layout**: A compact vertical card for narrow columns (`layout: vertical`)
 - **Visual config editor**: No-YAML setup via entity pickers in the Add Card → Edit screen
-- **Translated**: Card texts and the visual editor in English, Turkish, German, French and Spanish (follows your Home Assistant language)
+- **Translated**: Card texts and the visual editor in English, Turkish, German, French and Spanish (follows your Home Assistant language, see [Languages](#languages))
 
 ## Filter life ring
 
@@ -162,9 +162,29 @@ If you'd rather not write YAML, click **Edit** (pencil icon) on the card after a
 - (Optional) Enter the mode cycle order as a comma-separated list (e.g. `Auto, Sleep, Manual, Favorite`)
 - (Optional) In the **Extras** panel: filter life sensor, PM10 / CO₂ / TVOC sensors, timer entity, extra controls, filter ring mode, air quality label, the four PM2.5 color limits and the particle animation
 
-## Adding a language
+## Languages
 
-All texts live in a single `TRANSLATIONS` object at the top of `purifier-card.js`, shared by the card and the visual editor. To add a language, copy the `en` block, change the key to your language code (e.g. `pt`, or `sr-Latn` for a script/region variant) and translate the values. Missing keys fall back to English, and regional codes like `pt-BR` fall back to `pt`. Pull requests are welcome!
+The card and the visual editor follow your Home Assistant language (**Settings → Profile → Language**). No configuration is needed.
+
+| Language | Code |
+| --- | --- |
+| English | `en` (default and fallback) |
+| Turkish | `tr` |
+| German | `de` |
+| French | `fr` |
+| Spanish | `es` |
+
+If your language is not translated yet, the card shows English. Regional variants fall back to the base language, e.g. `de-AT` shows German.
+
+### Adding a language
+
+All texts live in a single `TRANSLATIONS` object at the top of `purifier-card.js`, shared by the card and the visual editor. To add a language:
+
+1. Copy the whole `en` block inside `TRANSLATIONS`.
+2. Change its key to your language code, e.g. `pt`. Script or region variants are supported too, e.g. `"sr-Latn"` or `"pt-BR"` (a region code is used first, then the base language).
+3. Translate the values and keep the keys exactly as they are. Keys you leave out fall back to English.
+
+You don't need to change anything else. Pull requests with new or improved translations are very welcome!
 
 ## License
 
