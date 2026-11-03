@@ -1,3 +1,277 @@
+// ---------- Çeviriler / Translations ----------
+// Dil -> anahtar -> metin. Kart ve editör aynı sözlüğü kullanır.
+// Yeni dil eklemek için: aşağıya yeni bir blok ekle (örn. "sr-Latn" veya
+// "pt"); başka hiçbir yere dokunmana gerek yok. Eksik anahtar İngilizceye
+// düşer. Bölgeli kodlar (örn. "pt-BR") varsa önce onlar, yoksa ilk kısım
+// ("pt") kullanılır.
+//  - Küçük harfli kısa anahtarlar (offline, aq0...) kartın kendi metinleri.
+//  - İngilizce cümle olan anahtarlar görsel editörün metinleri.
+const TRANSLATIONS = {
+  en: {
+    offline: "Offline",
+    filter: "Filter",
+    speed: "Fan speed",
+    mode: "Mode",
+    timer: "Turn off in",
+    timer_off: "Off",
+    controls: "Controls",
+    temperature: "Temperature",
+    humidity: "Humidity",
+    aq0: "Good",
+    aq1: "Moderate",
+    aq2: "Poor",
+    aq3: "Unhealthy",
+    aq4: "Hazardous",
+    Sensors: "Sensors",
+    Appearance: "Appearance",
+    Interactions: "Interactions",
+    Icon: "Icon",
+    Card: "Card",
+    "Content layout": "Content layout",
+    Horizontal: "Horizontal",
+    Vertical: "Vertical",
+    "Tap behavior": "Tap behavior",
+    "Hold behavior": "Hold behavior",
+    "Double tap behavior": "Double tap behavior",
+    "PM2.5 sensor": "PM2.5 sensor",
+    "Temperature sensor": "Temperature sensor",
+    "Humidity sensor": "Humidity sensor",
+    "Connectivity sensor": "Connectivity sensor",
+    Extras: "Extras",
+    "Filter life sensor": "Filter life sensor",
+    "PM10 sensor": "PM10 sensor",
+    "CO2 sensor": "CO2 sensor",
+    "TVOC sensor": "TVOC sensor",
+    "Timer (number, minutes)": "Timer (number, minutes)",
+    "Extra controls (child lock, LED, buzzer...)": "Extra controls (child lock, LED, buzzer...)",
+    "Filter ring": "Filter ring",
+    Always: "Always",
+    "Only when low": "Only when low",
+    Hidden: "Hidden",
+    "Show air quality label": "Show air quality label",
+    "Dust particles animation": "Dust particles animation",
+    "PM2.5 limit: green": "PM2.5 limit: green",
+    "PM2.5 limit: yellow": "PM2.5 limit: yellow",
+    "PM2.5 limit: orange": "PM2.5 limit: orange",
+    "PM2.5 limit: red": "PM2.5 limit: red",
+  },
+  tr: {
+    offline: "Çevrimdışı",
+    filter: "Filtre",
+    speed: "Fan hızı",
+    mode: "Mod",
+    timer: "Kapanma süresi",
+    timer_off: "Kapalı",
+    controls: "Kontroller",
+    temperature: "Sıcaklık",
+    humidity: "Nem",
+    aq0: "İyi",
+    aq1: "Orta",
+    aq2: "Kötü",
+    aq3: "Sağlıksız",
+    aq4: "Tehlikeli",
+    Sensors: "Sensörler",
+    Appearance: "Görünüm",
+    Interactions: "Etkileşimler",
+    Icon: "İkon",
+    Card: "Kart",
+    "Content layout": "İçerik düzeni",
+    Horizontal: "Yatay",
+    Vertical: "Dikey",
+    "Tap behavior": "Dokunma davranışı",
+    "Hold behavior": "Basılı tutma davranışı",
+    "Double tap behavior": "Çift dokunma davranışı",
+    "PM2.5 sensor": "PM2.5 sensörü",
+    "Temperature sensor": "Sıcaklık sensörü",
+    "Humidity sensor": "Nem sensörü",
+    "Connectivity sensor": "Bağlantı sensörü (otomatik algılanır, override için)",
+    Extras: "Ek özellikler",
+    "Filter life sensor": "Filtre ömrü sensörü",
+    "PM10 sensor": "PM10 sensörü",
+    "CO2 sensor": "CO₂ sensörü",
+    "TVOC sensor": "TVOC sensörü",
+    "Timer (number, minutes)": "Zamanlayıcı (number, dakika)",
+    "Extra controls (child lock, LED, buzzer...)": "Ek kontroller (çocuk kilidi, LED, ses...)",
+    "Filter ring": "Filtre halkası",
+    Always: "Her zaman",
+    "Only when low": "Sadece düşükken",
+    Hidden: "Gizli",
+    "Show air quality label": "Hava kalitesi etiketini göster",
+    "Dust particles animation": "Toz parçacığı animasyonu",
+    "PM2.5 limit: green": "PM2.5 sınırı: yeşil (µg/m³)",
+    "PM2.5 limit: yellow": "PM2.5 sınırı: sarı (µg/m³)",
+    "PM2.5 limit: orange": "PM2.5 sınırı: turuncu (µg/m³)",
+    "PM2.5 limit: red": "PM2.5 sınırı: kırmızı (µg/m³)",
+  },
+  de: {
+    offline: "Offline",
+    filter: "Filter",
+    speed: "Lüfterstufe",
+    mode: "Modus",
+    timer: "Ausschalten in",
+    timer_off: "Aus",
+    controls: "Steuerung",
+    temperature: "Temperatur",
+    humidity: "Luftfeuchte",
+    aq0: "Gut",
+    aq1: "Mäßig",
+    aq2: "Schlecht",
+    aq3: "Ungesund",
+    aq4: "Gefährlich",
+    Sensors: "Sensoren",
+    Appearance: "Darstellung",
+    Interactions: "Interaktionen",
+    Icon: "Symbol",
+    Card: "Karte",
+    "Content layout": "Inhaltslayout",
+    Horizontal: "Horizontal",
+    Vertical: "Vertikal",
+    "Tap behavior": "Verhalten beim Tippen",
+    "Hold behavior": "Verhalten beim Halten",
+    "Double tap behavior": "Verhalten beim Doppeltippen",
+    "PM2.5 sensor": "PM2.5-Sensor",
+    "Temperature sensor": "Temperatursensor",
+    "Humidity sensor": "Feuchtigkeitssensor",
+    "Connectivity sensor": "Verbindungssensor (wird automatisch erkannt, zum Überschreiben)",
+    Extras: "Zusatzfunktionen",
+    "Filter life sensor": "Sensor Filterlebensdauer",
+    "PM10 sensor": "PM10-Sensor",
+    "CO2 sensor": "CO₂-Sensor",
+    "TVOC sensor": "TVOC-Sensor",
+    "Timer (number, minutes)": "Timer (Zahl, Minuten)",
+    "Extra controls (child lock, LED, buzzer...)": "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)",
+    "Filter ring": "Filterring",
+    Always: "Immer",
+    "Only when low": "Nur bei niedrigem Stand",
+    Hidden: "Ausgeblendet",
+    "Show air quality label": "Luftqualitätsbezeichnung anzeigen",
+    "Dust particles animation": "Staubpartikel-Animation",
+    "PM2.5 limit: green": "PM2.5-Grenze: Grün (µg/m³)",
+    "PM2.5 limit: yellow": "PM2.5-Grenze: Gelb (µg/m³)",
+    "PM2.5 limit: orange": "PM2.5-Grenze: Orange (µg/m³)",
+    "PM2.5 limit: red": "PM2.5-Grenze: Rot (µg/m³)",
+  },
+  fr: {
+    offline: "Hors ligne",
+    filter: "Filtre",
+    speed: "Vitesse",
+    mode: "Mode",
+    timer: "Arrêt dans",
+    timer_off: "Désactivé",
+    controls: "Commandes",
+    temperature: "Température",
+    humidity: "Humidité",
+    aq0: "Bon",
+    aq1: "Modéré",
+    aq2: "Mauvais",
+    aq3: "Malsain",
+    aq4: "Dangereux",
+    Sensors: "Capteurs",
+    Appearance: "Apparence",
+    Interactions: "Interactions",
+    Icon: "Icône",
+    Card: "Carte",
+    "Content layout": "Disposition du contenu",
+    Horizontal: "Horizontal",
+    Vertical: "Vertical",
+    "Tap behavior": "Comportement au toucher",
+    "Hold behavior": "Comportement au maintien",
+    "Double tap behavior": "Comportement au double toucher",
+    "PM2.5 sensor": "Capteur PM2.5",
+    "Temperature sensor": "Capteur de température",
+    "Humidity sensor": "Capteur d'humidité",
+    "Connectivity sensor": "Capteur de connectivité (détecté automatiquement, pour forcer)",
+    Extras: "Extras",
+    "Filter life sensor": "Capteur de durée de vie du filtre",
+    "PM10 sensor": "Capteur PM10",
+    "CO2 sensor": "Capteur CO₂",
+    "TVOC sensor": "Capteur TVOC",
+    "Timer (number, minutes)": "Minuterie (nombre, minutes)",
+    "Extra controls (child lock, LED, buzzer...)": "Commandes supplémentaires (verrou enfant, LED, buzzer...)",
+    "Filter ring": "Anneau du filtre",
+    Always: "Toujours",
+    "Only when low": "Seulement si faible",
+    Hidden: "Masqué",
+    "Show air quality label": "Afficher le libellé de qualité d'air",
+    "Dust particles animation": "Animation des particules de poussière",
+    "PM2.5 limit: green": "Limite PM2.5 : vert (µg/m³)",
+    "PM2.5 limit: yellow": "Limite PM2.5 : jaune (µg/m³)",
+    "PM2.5 limit: orange": "Limite PM2.5 : orange (µg/m³)",
+    "PM2.5 limit: red": "Limite PM2.5 : rouge (µg/m³)",
+  },
+  es: {
+    offline: "Sin conexión",
+    filter: "Filtro",
+    speed: "Velocidad",
+    mode: "Modo",
+    timer: "Apagar en",
+    timer_off: "Apagado",
+    controls: "Controles",
+    temperature: "Temperatura",
+    humidity: "Humedad",
+    aq0: "Buena",
+    aq1: "Moderada",
+    aq2: "Mala",
+    aq3: "Insalubre",
+    aq4: "Peligrosa",
+    Sensors: "Sensores",
+    Appearance: "Apariencia",
+    Interactions: "Interacciones",
+    Icon: "Icono",
+    Card: "Tarjeta",
+    "Content layout": "Diseño del contenido",
+    Horizontal: "Horizontal",
+    Vertical: "Vertical",
+    "Tap behavior": "Comportamiento al tocar",
+    "Hold behavior": "Comportamiento al mantener",
+    "Double tap behavior": "Comportamiento al tocar dos veces",
+    "PM2.5 sensor": "Sensor PM2.5",
+    "Temperature sensor": "Sensor de temperatura",
+    "Humidity sensor": "Sensor de humedad",
+    "Connectivity sensor": "Sensor de conectividad (se detecta automáticamente, para anular)",
+    Extras: "Extras",
+    "Filter life sensor": "Sensor de vida del filtro",
+    "PM10 sensor": "Sensor PM10",
+    "CO2 sensor": "Sensor de CO₂",
+    "TVOC sensor": "Sensor TVOC",
+    "Timer (number, minutes)": "Temporizador (número, minutos)",
+    "Extra controls (child lock, LED, buzzer...)": "Controles adicionales (bloqueo infantil, LED, zumbador...)",
+    "Filter ring": "Anillo del filtro",
+    Always: "Siempre",
+    "Only when low": "Solo cuando es bajo",
+    Hidden: "Oculto",
+    "Show air quality label": "Mostrar etiqueta de calidad del aire",
+    "Dust particles animation": "Animación de partículas de polvo",
+    "PM2.5 limit: green": "Límite PM2.5: verde (µg/m³)",
+    "PM2.5 limit: yellow": "Límite PM2.5: amarillo (µg/m³)",
+    "PM2.5 limit: orange": "Límite PM2.5: naranja (µg/m³)",
+    "PM2.5 limit: red": "Límite PM2.5: rojo (µg/m³)",
+  },
+};
+
+const _LANG_LOOKUP = Object.fromEntries(
+  Object.keys(TRANSLATIONS).map((k) => [k.toLowerCase(), k])
+);
+
+// Home Assistant dilinden (örn. "sr-Latn-RS", "tr-TR") sözlükteki en iyi
+// eşleşen dil koduna ulaşır: "sr-latn-rs" -> "sr-latn" -> "sr".
+function resolveLang(hass) {
+  const raw = (hass?.locale?.language || hass?.language || "en")
+    .toLowerCase()
+    .replace(/_/g, "-");
+  const parts = raw.split("-");
+  while (parts.length) {
+    const hit = _LANG_LOOKUP[parts.join("-")];
+    if (hit) return hit;
+    parts.pop();
+  }
+  return "en";
+}
+
+function translate(hass, key) {
+  return TRANSLATIONS[resolveLang(hass)]?.[key] ?? TRANSLATIONS.en[key] ?? key;
+}
+
 class XiaomiAirPurifierCard extends HTMLElement {
   static getStubConfig() {
     return {
@@ -337,32 +611,8 @@ class XiaomiAirPurifierCard extends HTMLElement {
     return this._s("offline");
   }
 
-  // Kartın kendi ürettiği metinler (rozet, pencere başlıkları, hava
-  // kalitesi etiketleri). Anahtar -> dil kodu -> metin; dil yoksa en.
-  _strings() {
-    return {
-      offline: { en: "Offline", tr: "Çevrimdışı", de: "Offline", fr: "Hors ligne", es: "Sin conexión" },
-      filter: { en: "Filter", tr: "Filtre", de: "Filter", fr: "Filtre", es: "Filtro" },
-      speed: { en: "Fan speed", tr: "Fan hızı", de: "Lüfterstufe", fr: "Vitesse", es: "Velocidad" },
-      mode: { en: "Mode", tr: "Mod", de: "Modus", fr: "Mode", es: "Modo" },
-      timer: { en: "Turn off in", tr: "Kapanma süresi", de: "Ausschalten in", fr: "Arrêt dans", es: "Apagar en" },
-      timer_off: { en: "Off", tr: "Kapalı", de: "Aus", fr: "Désactivé", es: "Apagado" },
-      controls: { en: "Controls", tr: "Kontroller", de: "Steuerung", fr: "Commandes", es: "Controles" },
-      temperature: { en: "Temperature", tr: "Sıcaklık", de: "Temperatur", fr: "Température", es: "Temperatura" },
-      humidity: { en: "Humidity", tr: "Nem", de: "Luftfeuchte", fr: "Humidité", es: "Humedad" },
-      aq0: { en: "Good", tr: "İyi", de: "Gut", fr: "Bon", es: "Buena" },
-      aq1: { en: "Moderate", tr: "Orta", de: "Mäßig", fr: "Modéré", es: "Moderada" },
-      aq2: { en: "Poor", tr: "Kötü", de: "Schlecht", fr: "Mauvais", es: "Mala" },
-      aq3: { en: "Unhealthy", tr: "Sağlıksız", de: "Ungesund", fr: "Malsain", es: "Insalubre" },
-      aq4: { en: "Hazardous", tr: "Tehlikeli", de: "Gefährlich", fr: "Dangereux", es: "Peligrosa" },
-    };
-  }
-
   _s(key) {
-    const raw = this._hass?.locale?.language || this._hass?.language || "en";
-    const lang = raw.toLowerCase().slice(0, 2);
-    const entry = this._strings()[key] || {};
-    return entry[lang] || entry.en || key;
+    return translate(this._hass, key);
   }
 
   // Bir entity'nin TÜM attribute'larını tarar; iki koşuldan biri
@@ -2457,66 +2707,12 @@ class XiaomiAirPurifierCardEditor extends HTMLElement {
   // Bu sayede HA key'inin gerçekten var olup olmadığına bel bağlamadan
   // editör hem Türkçe hem İngilizce'de doğru görünür. Başka diller HA
   // çevirileri varsa onlardan, yoksa İngilizce fallback gösterir.
-  _dict() {
-    // Anahtar = İngilizce fallback string. Değer = dile göre çeviri.
-    // Yeni dil eklemek istersen her satıra yeni bir dil kodu ekle.
-    return {
-      Sensors: { tr: "Sensörler", de: "Sensoren", fr: "Capteurs", es: "Sensores" },
-      Appearance: { tr: "Görünüm", de: "Darstellung", fr: "Apparence", es: "Apariencia" },
-      Interactions: { tr: "Etkileşimler", de: "Interaktionen", fr: "Interactions", es: "Interacciones" },
-      Icon: { tr: "İkon", de: "Symbol", fr: "Icône", es: "Icono" },
-      Card: { tr: "Kart", de: "Karte", fr: "Carte", es: "Tarjeta" },
-      "Content layout": { tr: "İçerik düzeni", de: "Inhaltslayout", fr: "Disposition du contenu", es: "Diseño del contenido" },
-      Horizontal: { tr: "Yatay", de: "Horizontal", fr: "Horizontal", es: "Horizontal" },
-      Vertical: { tr: "Dikey", de: "Vertikal", fr: "Vertical", es: "Vertical" },
-      "Tap behavior": { tr: "Dokunma davranışı", de: "Verhalten beim Tippen", fr: "Comportement au toucher", es: "Comportamiento al tocar" },
-      "Hold behavior": { tr: "Basılı tutma davranışı", de: "Verhalten beim Halten", fr: "Comportement au maintien", es: "Comportamiento al mantener" },
-      "Double tap behavior": { tr: "Çift dokunma davranışı", de: "Verhalten beim Doppeltippen", fr: "Comportement au double toucher", es: "Comportamiento al tocar dos veces" },
-      "PM2.5 sensor": { tr: "PM2.5 sensörü", de: "PM2.5-Sensor", fr: "Capteur PM2.5", es: "Sensor PM2.5" },
-      "Temperature sensor": { tr: "Sıcaklık sensörü", de: "Temperatursensor", fr: "Capteur de température", es: "Sensor de temperatura" },
-      "Humidity sensor": { tr: "Nem sensörü", de: "Feuchtigkeitssensor", fr: "Capteur d'humidité", es: "Sensor de humedad" },
-      "Connectivity sensor": { tr: "Bağlantı sensörü (otomatik algılanır, override için)", de: "Verbindungssensor (wird automatisch erkannt, zum Überschreiben)", fr: "Capteur de connectivité (détecté automatiquement, pour forcer)", es: "Sensor de conectividad (se detecta automáticamente, para anular)" },
-      Extras: { tr: "Ek özellikler", de: "Zusatzfunktionen", fr: "Extras", es: "Extras" },
-      "Filter life sensor": { tr: "Filtre ömrü sensörü", de: "Sensor Filterlebensdauer", fr: "Capteur de durée de vie du filtre", es: "Sensor de vida del filtro" },
-      "PM10 sensor": { tr: "PM10 sensörü", de: "PM10-Sensor", fr: "Capteur PM10", es: "Sensor PM10" },
-      "CO2 sensor": { tr: "CO₂ sensörü", de: "CO₂-Sensor", fr: "Capteur CO₂", es: "Sensor de CO₂" },
-      "TVOC sensor": { tr: "TVOC sensörü", de: "TVOC-Sensor", fr: "Capteur TVOC", es: "Sensor TVOC" },
-      "Timer (number, minutes)": { tr: "Zamanlayıcı (number, dakika)", de: "Timer (Zahl, Minuten)", fr: "Minuterie (nombre, minutes)", es: "Temporizador (número, minutos)" },
-      "Extra controls (child lock, LED, buzzer...)": { tr: "Ek kontroller (çocuk kilidi, LED, ses...)", de: "Zusätzliche Steuerung (Kindersicherung, LED, Signalton ...)", fr: "Commandes supplémentaires (verrou enfant, LED, buzzer...)", es: "Controles adicionales (bloqueo infantil, LED, zumbador...)" },
-      "Filter ring": { tr: "Filtre halkası", de: "Filterring", fr: "Anneau du filtre", es: "Anillo del filtro" },
-      Always: { tr: "Her zaman", de: "Immer", fr: "Toujours", es: "Siempre" },
-      "Only when low": { tr: "Sadece düşükken", de: "Nur bei niedrigem Stand", fr: "Seulement si faible", es: "Solo cuando es bajo" },
-      Hidden: { tr: "Gizli", de: "Ausgeblendet", fr: "Masqué", es: "Oculto" },
-      "Show air quality label": { tr: "Hava kalitesi etiketini göster", de: "Luftqualitätsbezeichnung anzeigen", fr: "Afficher le libellé de qualité d'air", es: "Mostrar etiqueta de calidad del aire" },
-      "Dust particles animation": { tr: "Toz parçacığı animasyonu", de: "Staubpartikel-Animation", fr: "Animation des particules de poussière", es: "Animación de partículas de polvo" },
-      "PM2.5 limit: green": { tr: "PM2.5 sınırı: yeşil (µg/m³)", de: "PM2.5-Grenze: Grün (µg/m³)", fr: "Limite PM2.5 : vert (µg/m³)", es: "Límite PM2.5: verde (µg/m³)" },
-      "PM2.5 limit: yellow": { tr: "PM2.5 sınırı: sarı (µg/m³)", de: "PM2.5-Grenze: Gelb (µg/m³)", fr: "Limite PM2.5 : jaune (µg/m³)", es: "Límite PM2.5: amarillo (µg/m³)" },
-      "PM2.5 limit: orange": { tr: "PM2.5 sınırı: turuncu (µg/m³)", de: "PM2.5-Grenze: Orange (µg/m³)", fr: "Limite PM2.5 : orange (µg/m³)", es: "Límite PM2.5: naranja (µg/m³)" },
-      "PM2.5 limit: red": { tr: "PM2.5 sınırı: kırmızı (µg/m³)", de: "PM2.5-Grenze: Rot (µg/m³)", fr: "Limite PM2.5 : rouge (µg/m³)", es: "Límite PM2.5: rojo (µg/m³)" },
-    };
-  }
-
-  _userLang() {
-    // hass.locale.language en güvenilir kaynak; eski sürümlerde
-    // hass.language. İlk iki harfini (örn. "tr-TR" -> "tr") al.
-    const raw =
-      this._hass?.locale?.language ||
-      this._hass?.language ||
-      "en";
-    return raw.toLowerCase().slice(0, 2);
-  }
-
   _t(haKey, fallback) {
     // 1) HA'nın çevirisi (gerçek key varsa)
     const ha = haKey ? this._hass?.localize?.(haKey) : null;
     if (ha && typeof ha === "string") return ha;
-    // 2) Kart mini sözlüğü
-    const lang = this._userLang();
-    const dict = this._dict();
-    const entry = dict[fallback];
-    if (entry && entry[lang]) return entry[lang];
-    // 3) İngilizce
-    return fallback;
+    // 2) Ortak çeviri sözlüğü (TRANSLATIONS), 3) İngilizce fallback
+    return translate(this._hass, fallback);
   }
 
   // ---------- Cihaz/sensör tespit yardımcıları ----------

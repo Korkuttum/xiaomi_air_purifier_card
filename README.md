@@ -162,6 +162,10 @@ If you'd rather not write YAML, click **Edit** (pencil icon) on the card after a
 - (Optional) Enter the mode cycle order as a comma-separated list (e.g. `Auto, Sleep, Manual, Favorite`)
 - (Optional) In the **Extras** panel: filter life sensor, PM10 / CO₂ / TVOC sensors, timer entity, extra controls, filter ring mode, air quality label, the four PM2.5 color limits and the particle animation
 
+## Adding a language
+
+All texts live in a single `TRANSLATIONS` object at the top of `purifier-card.js`, shared by the card and the visual editor. To add a language, copy the `en` block, change the key to your language code (e.g. `pt`, or `sr-Latn` for a script/region variant) and translate the values. Missing keys fall back to English, and regional codes like `pt-BR` fall back to `pt`. Pull requests are welcome!
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
