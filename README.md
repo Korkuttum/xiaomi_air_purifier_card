@@ -22,7 +22,7 @@ A minimalist, single-row air purifier / fan card for Home Assistant. It packs po
 - **Air quality label**: Optional "Good / Moderate / Poor / Unhealthy / Hazardous" text under the PM2.5 value, with configurable thresholds
 - **Vertical layout**: A compact vertical card for narrow columns (`layout: vertical`)
 - **Visual config editor**: No-YAML setup via entity pickers in the Add Card â†’ Edit screen
-- **Translated**: Card texts and the visual editor in English, Turkish, German, French and Spanish (follows your Home Assistant language, see [Languages](#languages))
+- **Translated**: Card texts and the visual editor in English, Turkish, German, French, Spanish and Serbian (follows your Home Assistant language, see [Languages](#languages))
 
 ## Filter life ring
 
@@ -173,6 +173,8 @@ The card and the visual editor follow your Home Assistant language (**Settings â
 | German | `de` |
 | French | `fr` |
 | Spanish | `es` |
+| Serbian (Cyrillic) | `sr` |
+| Serbian (Latin) | `sr-Latn` |
 
 If your language is not translated yet, the card shows English. Regional variants fall back to the base language, e.g. `de-AT` shows German.
 
